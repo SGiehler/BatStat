@@ -20,3 +20,9 @@ toml = "0.8"
 notify-rust = "4.11"
 rfd = "0.15"
 image = { version = "0.25", default-features = false, features = ["png"] }
+windows = { version = "0.58.0", features = [
+    "Gaming_Input",
+    "Devices_Power",
+    "System_Power",
+    "Foundation_Collections",
+] }
