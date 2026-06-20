@@ -88,3 +88,93 @@ pub fn save_config(config: &AppConfig) -> Result<(), String> {
     fs::write(&path, content).map_err(|e| format!("Failed to write config file: {}", e))?;
     Ok(())
 }
+
+pub fn get_icons_dir_path() -> Option<PathBuf> {
+    std::env::var("APPDATA").ok().map(|appdata| {
+        let mut path = PathBuf::from(appdata);
+        path.push("BatStat");
+        path.push("icons");
+        path
+    })
+}
+
+pub fn get_icon_list() -> Vec<String> {
+    let mut list = Vec::new();
+    if let Some(path) = get_icons_dir_path() {
+        if let Ok(entries) = fs::read_dir(path) {
+            for entry in entries.flatten() {
+                if let Ok(file_type) = entry.file_type() {
+                    if file_type.is_file() {
+                        let name = entry.file_name().to_string_lossy().into_owned();
+                        if name.ends_with(".png") || name.ends_with(".ico") {
+                            // Don't show ok.png in the low battery selection dropdown
+                            if name != "ok.png" {
+                                list.push(name);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    list.sort();
+    list
+}
+
+fn colorize_icon(default_bytes: &[u8], color: image::Rgba<u8>) -> Vec<u8> {
+    let mut img = image::load_from_memory(default_bytes).unwrap().into_rgba8();
+    for pixel in img.pixels_mut() {
+        if pixel[3] > 0 {
+            pixel[0] = color[0];
+            pixel[1] = color[1];
+            pixel[2] = color[2];
+        }
+    }
+    let mut buffer = std::io::Cursor::new(Vec::new());
+    img.write_to(&mut buffer, image::ImageFormat::Png).unwrap();
+    buffer.into_inner()
+}
+
+pub fn setup_icons_folder() {
+    if let Some(dir) = get_icons_dir_path() {
+        let _ = fs::create_dir_all(&dir);
+        
+        let defaults = vec![
+            ("ok.png", include_bytes!("icons/ok.png").to_vec()),
+            ("low_mouse.png", include_bytes!("icons/low_mouse.png").to_vec()),
+            ("low_gamepad.png", include_bytes!("icons/low_gamepad.png").to_vec()),
+            ("low_buds.png", include_bytes!("icons/low_buds.png").to_vec()),
+        ];
+        
+        for (name, bytes) in defaults {
+            let path = dir.join(name);
+            if !path.exists() {
+                let _ = fs::write(path, bytes);
+            }
+        }
+        
+        let color_variations = vec![
+            ("red", image::Rgba([218, 30, 40, 255])),     // #da1e28
+            ("orange", image::Rgba([247, 127, 0, 255])),  // Orange
+            ("yellow", image::Rgba([252, 191, 73, 255])), // Yellow
+            ("blue", image::Rgba([76, 201, 240, 255])),   // Electric Blue
+        ];
+        
+        let templates = vec![
+            ("mouse", include_bytes!("icons/low_mouse.png").to_vec()),
+            ("gamepad", include_bytes!("icons/low_gamepad.png").to_vec()),
+            ("buds", include_bytes!("icons/low_buds.png").to_vec()),
+        ];
+        
+        for (color_name, rgba) in color_variations {
+            for (temp_name, temp_bytes) in &templates {
+                let filename = format!("low_{}_{}.png", temp_name, color_name);
+                let path = dir.join(&filename);
+                if !path.exists() {
+                    let colorized = colorize_icon(temp_bytes, rgba);
+                    let _ = fs::write(path, colorized);
+                }
+            }
+        }
+    }
+}

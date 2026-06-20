@@ -427,30 +427,42 @@ impl eframe::App for SettingsWindow {
                                             
                                             // Row 2: Custom Low Icon
                                             ui.horizontal(|ui| {
-                                                ui.label(egui::RichText::new("DEVICE ICON").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)).strong());
+                                                ui.label(egui::RichText::new("LOW BATTERY ICON").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)).strong());
                                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                    if ui.button(egui::RichText::new("Choose...").font(egui::FontId::proportional(10.0))).clicked() {
-                                                        if let Some(path) = rfd::FileDialog::new()
-                                                            .add_filter("Image", &["png", "ico"])
-                                                            .pick_file() 
-                                                        {
-                                                            dev.low_battery_icon_path = Some(path.to_string_lossy().into_owned());
+                                                    // Open Folder button
+                                                    if ui.button(egui::RichText::new("📁 Folder").font(egui::FontId::proportional(10.0))).clicked() {
+                                                        if let Some(dir) = crate::config::get_icons_dir_path() {
+                                                            let _ = std::process::Command::new("explorer").arg(dir).spawn();
                                                         }
                                                     }
                                                     
+                                                    // Reset button
                                                     if dev.low_battery_icon_path.is_some() {
                                                         if ui.button(egui::RichText::new("Reset").font(egui::FontId::proportional(10.0))).clicked() {
                                                             dev.low_battery_icon_path = None;
                                                         }
                                                     }
                                                     
-                                                    let path_str = dev.low_battery_icon_path.as_deref().unwrap_or("Default");
-                                                    let preview_text = if path_str.len() > 18 {
-                                                        format!("...{}", &path_str[path_str.len()-15..])
-                                                    } else {
-                                                        path_str.to_string()
-                                                    };
-                                                    ui.label(egui::RichText::new(preview_text).color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::monospace(10.0)));
+                                                    // Dropdown combo box
+                                                    let available_icons = crate::config::get_icon_list();
+                                                    let current_selected = dev.low_battery_icon_path.as_deref().unwrap_or("Default");
+                                                    
+                                                    egui::ComboBox::from_id_source(format!("icon_combo_{}", dev.unique_id))
+                                                        .selected_text(current_selected)
+                                                        .width(140.0)
+                                                        .show_ui(ui, |ui| {
+                                                            let mut is_default = dev.low_battery_icon_path.is_none();
+                                                            if ui.selectable_value(&mut is_default, true, "Default").clicked() {
+                                                                dev.low_battery_icon_path = None;
+                                                            }
+                                                            
+                                                            for icon_name in &available_icons {
+                                                                let mut is_selected = dev.low_battery_icon_path.as_deref() == Some(icon_name);
+                                                                if ui.selectable_value(&mut is_selected, true, icon_name).clicked() {
+                                                                    dev.low_battery_icon_path = Some(icon_name.clone());
+                                                                }
+                                                            }
+                                                        });
                                                 });
                                             });
                                             

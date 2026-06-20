@@ -86,8 +86,19 @@ fn update_tray_icon_main(
             CYCLE_INDEX = (CYCLE_INDEX + 1) % low_devices.len();
 
             if let Some(ref path_str) = dev.low_battery_icon_path {
-                if let Ok(custom_icon) = load_icon_from_file(path_str) {
-                    custom_icon
+                let resolved_path = if !path_str.contains('\\') && !path_str.contains('/') {
+                    crate::config::get_icons_dir_path()
+                        .map(|dir| dir.join(path_str))
+                } else {
+                    Some(std::path::PathBuf::from(path_str))
+                };
+                
+                let icon_loaded = resolved_path.and_then(|p| {
+                    load_icon_from_file(&p.to_string_lossy()).ok()
+                });
+                
+                if let Some(icon) = icon_loaded {
+                    icon
                 } else {
                     get_default_low_icon(dev)
                 }
@@ -319,6 +330,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("DEBUG: Loading config...");
     let config = load_config();
+
+    println!("DEBUG: Setting up icons folder and generating color variants...");
+    crate::config::setup_icons_folder();
     
     println!("DEBUG: Initializing shared state...");
     let shared_state = Arc::new(Mutex::new(SharedState {
