@@ -144,6 +144,7 @@ pub fn setup_icons_folder() {
             ("low_mouse.png", include_bytes!("icons/low_mouse.png").to_vec()),
             ("low_gamepad.png", include_bytes!("icons/low_gamepad.png").to_vec()),
             ("low_buds.png", include_bytes!("icons/low_buds.png").to_vec()),
+            ("low_keyboard.png", include_bytes!("icons/low_keyboard.png").to_vec()),
         ];
         
         for (name, bytes) in defaults {
@@ -162,6 +163,7 @@ pub fn setup_icons_folder() {
             ("mouse", include_bytes!("icons/low_mouse.png").to_vec()),
             ("gamepad", include_bytes!("icons/low_gamepad.png").to_vec()),
             ("buds", include_bytes!("icons/low_buds.png").to_vec()),
+            ("keyboard", include_bytes!("icons/low_keyboard.png").to_vec()),
         ];
         
         for (color_name, rgba) in color_variations {
@@ -177,7 +179,6 @@ pub fn setup_icons_folder() {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     fn generate_pixel_icon(grid: &[&str]) -> Vec<u8> {
         let height = grid.len();
@@ -278,6 +279,25 @@ mod tests {
             "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
         ];
 
+        let keyboard_grid = &[
+            "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+            "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+            "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+            "0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 0",
+            "0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 0",
+            "0 1 0 1 0 1 0 1 0 1 0 1 0 1 1 0",
+            "0 1 1 0 1 0 1 0 1 0 1 0 1 0 1 0",
+            "0 1 0 1 0 1 0 1 0 1 0 1 0 1 1 0",
+            "0 1 1 1 1 0 0 0 0 0 1 1 1 1 1 0",
+            "0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 0",
+            "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+            "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+            "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+            "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+            "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+            "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+        ];
+
         let base_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src").join("icons");
         std::fs::create_dir_all(&base_dir).unwrap();
 
@@ -285,5 +305,6 @@ mod tests {
         std::fs::write(base_dir.join("low_mouse.png"), generate_pixel_icon(mouse_grid)).unwrap();
         std::fs::write(base_dir.join("low_gamepad.png"), generate_pixel_icon(gamepad_grid)).unwrap();
         std::fs::write(base_dir.join("low_buds.png"), generate_pixel_icon(buds_grid)).unwrap();
+        std::fs::write(base_dir.join("low_keyboard.png"), generate_pixel_icon(keyboard_grid)).unwrap();
     }
 }

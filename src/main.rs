@@ -41,8 +41,10 @@ fn get_default_low_icon(dev: &crate::config::DeviceConfig) -> tray_icon::Icon {
         load_icon_from_memory(include_bytes!("icons/low_mouse.png"))
     } else if dev.unique_id.starts_with("xbox_") {
         load_icon_from_memory(include_bytes!("icons/low_gamepad.png"))
-    } else if dev.unique_id.starts_with("gamebuds_") {
+    } else if dev.unique_id.starts_with("gamebuds") {
         load_icon_from_memory(include_bytes!("icons/low_buds.png"))
+    } else if dev.unique_id.starts_with("keyboard") || dev.unique_id.contains("keyboard") {
+        load_icon_from_memory(include_bytes!("icons/low_keyboard.png"))
     } else {
         load_icon_from_memory(include_bytes!("icons/ok.png")) // fallback
     }

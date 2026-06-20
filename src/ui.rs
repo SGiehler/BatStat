@@ -381,6 +381,8 @@ impl eframe::App for SettingsWindow {
                                                     "GAMEPAD"
                                                 } else if dev.unique_id.starts_with("gamebuds") {
                                                     "BUDS"
+                                                } else if dev.unique_id.starts_with("keyboard") || dev.unique_id.contains("keyboard") {
+                                                    "KEYBOARD"
                                                 } else {
                                                     "DEV"
                                                 };
@@ -503,6 +505,8 @@ impl eframe::App for SettingsWindow {
                                                         "low_gamepad.png"
                                                     } else if dev.unique_id.starts_with("gamebuds") {
                                                         "low_buds.png"
+                                                    } else if dev.unique_id.starts_with("keyboard") || dev.unique_id.contains("keyboard") {
+                                                        "low_keyboard.png"
                                                     } else {
                                                         "ok.png"
                                                     };
