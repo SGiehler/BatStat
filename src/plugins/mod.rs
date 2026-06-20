@@ -7,6 +7,29 @@ pub struct DeviceBatteryStatus {
     pub percentage: u8,
     pub charging: bool,
     pub is_online: bool,
+    
+    pub left_percentage: Option<u8>,
+    pub right_percentage: Option<u8>,
+    pub left_charging: Option<bool>,
+    pub right_charging: Option<bool>,
+    pub left_online: Option<bool>,
+    pub right_online: Option<bool>,
+}
+
+impl DeviceBatteryStatus {
+    pub fn simple(percentage: u8, charging: bool, is_online: bool) -> Self {
+        Self {
+            percentage,
+            charging,
+            is_online,
+            left_percentage: None,
+            right_percentage: None,
+            left_charging: None,
+            right_charging: None,
+            left_online: None,
+            right_online: None,
+        }
+    }
 }
 
 pub trait DeviceInstance: Send + Sync {

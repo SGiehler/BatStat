@@ -8,6 +8,7 @@ pub struct SettingsWindow {
     pub active_devices: Vec<String>, // list of active unique_ids
     pub device_statuses: std::collections::HashMap<String, DeviceBatteryStatus>,
     pub request_close: bool,
+    pub request_poll: bool,
 }
 
 impl SettingsWindow {
@@ -21,6 +22,7 @@ impl SettingsWindow {
             active_devices,
             device_statuses,
             request_close: false,
+            request_poll: false,
         }
     }
 }
@@ -92,8 +94,8 @@ impl eframe::App for SettingsWindow {
         visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(0x16, 0x16, 0x16));
         visuals.widgets.active.rounding = egui::Rounding::same(4.0);
         
-        // Slider background track
-        visuals.extreme_bg_color = egui::Color32::from_rgb(0x1a, 0x1a, 0x2e);
+        // Slider background track - must be lighter than panel_fill to show the horizontal line!
+        visuals.extreme_bg_color = egui::Color32::from_rgb(0x39, 0x39, 0x52);
         
         ctx.set_visuals(visuals);
 
@@ -131,7 +133,7 @@ impl eframe::App for SettingsWindow {
                 });
             });
 
-        // 2. BOTTOM PANEL: Footer Buttons
+        // 2. BOTTOM PANEL: Footer Buttons (Centered perfectly via Right-to-Left vertical alignment)
         egui::TopBottomPanel::bottom("footer_panel")
             .frame(egui::Frame::none()
                 .fill(egui::Color32::from_rgb(0x1a, 0x1a, 0x2e))
@@ -139,23 +141,7 @@ impl eframe::App for SettingsWindow {
                 .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(0x39, 0x39, 0x52))) // top border
             )
             .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.add_space(ui.available_width() - 170.0); // push buttons to right
-                    
-                    // Cancel button (ghost style)
-                    let cancel_btn = egui::Button::new(
-                        egui::RichText::new("Cancel")
-                            .color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d))
-                            .font(egui::FontId::proportional(12.0))
-                    ).fill(egui::Color32::TRANSPARENT).frame(false);
-                    
-                    if ui.add(cancel_btn).clicked() {
-                        self.request_close = true;
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                    }
-                    
-                    ui.add_space(8.0);
-                    
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Save & Close button (electric blue)
                     let save_btn = egui::Button::new(
                         egui::RichText::new("Save & Close")
@@ -170,6 +156,20 @@ impl eframe::App for SettingsWindow {
                         if let Err(e) = save_config(&self.config) {
                             eprintln!("Failed to save config: {}", e);
                         }
+                        self.request_close = true;
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                    
+                    ui.add_space(8.0);
+                    
+                    // Cancel button (ghost style, perfectly aligned vertically)
+                    let cancel_btn = egui::Button::new(
+                        egui::RichText::new("Cancel")
+                            .color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d))
+                            .font(egui::FontId::proportional(12.0))
+                    ).fill(egui::Color32::TRANSPARENT).frame(false);
+                    
+                    if ui.add(cancel_btn).clicked() {
                         self.request_close = true;
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
@@ -272,14 +272,29 @@ impl eframe::App for SettingsWindow {
                         
                         ui.add_space(16.0);
                         
-                        // Section B: Peripherals
+                        // Section B: Peripherals (With dynamic detect devices button)
                         ui.vertical(|ui| {
-                            ui.label(
-                                egui::RichText::new("📱  CONNECTED PERIPHERALS")
-                                    .color(egui::Color32::from_rgb(0x4c, 0xc9, 0xf0))
-                                    .font(egui::FontId::proportional(10.0))
-                                    .strong()
-                            );
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new("📱  CONNECTED PERIPHERALS")
+                                        .color(egui::Color32::from_rgb(0x4c, 0xc9, 0xf0))
+                                        .font(egui::FontId::proportional(10.0))
+                                        .strong()
+                                );
+                                
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    let btn = egui::Button::new(
+                                        egui::RichText::new("🔄 Detect Devices")
+                                            .color(egui::Color32::WHITE)
+                                            .font(egui::FontId::proportional(10.0))
+                                            .strong()
+                                    ).fill(egui::Color32::from_rgb(0x2c, 0x2c, 0x4d)).rounding(4.0);
+                                    
+                                    if ui.add(btn).clicked() {
+                                        self.request_poll = true;
+                                    }
+                                });
+                            });
                             ui.add_space(6.0);
                             
                             let mut to_remove = None;
@@ -295,31 +310,31 @@ impl eframe::App for SettingsWindow {
                                     .inner_margin(egui::Margin { left: 12.0, right: 12.0, top: 12.0, bottom: 12.0 })
                                     .show(ui, |ui| {
                                         ui.vertical(|ui| {
-                                            // Row 1: Icon box + Name/Status + Enabled checkbox
+                                            // Row 1: Type badge + Name/Status + Enabled checkbox
                                             ui.horizontal(|ui| {
-                                                // Icon box
-                                                let emoji = if dev.unique_id.starts_with("pulsar_") {
-                                                    "🖱️"
+                                                // Type badge (standard letters, 100% robust rendering)
+                                                let tag = if dev.unique_id.starts_with("pulsar_") {
+                                                    "MOUSE"
                                                 } else if dev.unique_id.starts_with("xbox_") {
-                                                    "🎮"
+                                                    "GAMEPAD"
                                                 } else if dev.unique_id.starts_with("gamebuds") {
-                                                    "🎧"
+                                                    "BUDS"
                                                 } else {
-                                                    "🔌"
+                                                    "DEV"
                                                 };
                                                 
-                                                let (icon_rect, _) = ui.allocate_exact_size(egui::vec2(28.0, 28.0), egui::Sense::hover());
-                                                ui.painter().rect_filled(icon_rect, 4.0, egui::Color32::from_rgb(0x1a, 0x1a, 0x2e));
-                                                ui.painter().rect_stroke(icon_rect, 4.0, egui::Stroke::new(1.0, egui::Color32::from_rgb(0x39, 0x39, 0x52)));
+                                                let (tag_rect, _) = ui.allocate_exact_size(egui::vec2(52.0, 20.0), egui::Sense::hover());
+                                                ui.painter().rect_filled(tag_rect, 4.0, egui::Color32::from_rgb(0x1a, 0x1a, 0x2e));
+                                                ui.painter().rect_stroke(tag_rect, 4.0, egui::Stroke::new(1.0, egui::Color32::from_rgb(0x39, 0x39, 0x52)));
                                                 ui.painter().text(
-                                                    icon_rect.center(),
+                                                    tag_rect.center(),
                                                     egui::Align2::CENTER_CENTER,
-                                                    emoji,
-                                                    egui::FontId::proportional(16.0),
-                                                    egui::Color32::WHITE
+                                                    tag,
+                                                    egui::FontId::proportional(9.0),
+                                                    egui::Color32::from_rgb(0x4c, 0xc9, 0xf0) // Electric Blue text
                                                 );
                                                 
-                                                ui.add_space(4.0);
+                                                ui.add_space(6.0);
                                                 
                                                 // Title and status dot with battery levels
                                                 ui.vertical(|ui| {

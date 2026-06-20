@@ -18,6 +18,7 @@ struct SharedState {
     active_device_ids: Vec<String>,
     device_statuses: std::collections::HashMap<String, DeviceBatteryStatus>,
     last_notified: std::collections::HashMap<String, bool>,
+    request_poll: bool,
 }
 
 fn load_icon_from_memory(bytes: &[u8]) -> tray_icon::Icon {
@@ -266,6 +267,24 @@ impl eframe::App for BatStatApp {
 
         if self.visible {
             if let Some(ref mut ui_state) = self.ui_state {
+                // Sync live state from background thread and handle manual scan request
+                {
+                    let mut s = self.state.lock().unwrap();
+                    ui_state.active_devices = s.active_device_ids.clone();
+                    ui_state.device_statuses = s.device_statuses.clone();
+                    
+                    // Merge newly discovered devices into UI config
+                    for dev in &s.config.devices {
+                        if !ui_state.config.devices.iter().any(|d| d.unique_id == dev.unique_id) {
+                            ui_state.config.devices.push(dev.clone());
+                        }
+                    }
+                    
+                    if ui_state.request_poll {
+                        s.request_poll = true;
+                        ui_state.request_poll = false;
+                    }
+                }
                 ui_state.update(ctx, frame);
                 if ui_state.request_close {
                     // Sync main config from UI
@@ -307,6 +326,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         active_device_ids: Vec::new(),
         device_statuses: std::collections::HashMap::new(),
         last_notified: std::collections::HashMap::new(),
+        request_poll: false,
     }));
 
 
@@ -324,12 +344,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut last_poll = std::time::Instant::now() - std::time::Duration::from_secs(3600);
 
         loop {
-            let (polling_interval, _devices_config) = {
-                let state = state_clone.lock().unwrap();
-                (state.config.polling_interval_secs, state.config.devices.clone())
+            let (polling_interval, request_poll) = {
+                let mut state = state_clone.lock().unwrap();
+                let req = state.request_poll;
+                if req {
+                    state.request_poll = false;
+                }
+                (state.config.polling_interval_secs, req)
             };
 
-            if last_poll.elapsed() >= std::time::Duration::from_secs(polling_interval) {
+            if request_poll || last_poll.elapsed() >= std::time::Duration::from_secs(polling_interval) {
                 last_poll = std::time::Instant::now();
                 
                 if let Ok(api) = hidapi::HidApi::new() {
@@ -343,14 +367,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     for inst in &active_instances {
                         let id = inst.unique_id();
-                        active_ids.push(id.clone());
+                        if !active_ids.contains(&id) {
+                            active_ids.push(id.clone());
+                        }
 
-                        match inst.query_battery(&api) {
-                            Ok(status) => {
-                                new_statuses.insert(id, status);
-                            }
-                            Err(e) => {
-                                eprintln!("Failed to query battery for {}: {}", inst.default_name(), e);
+                        if !new_statuses.contains_key(&id) {
+                            match inst.query_battery(&api) {
+                                Ok(status) => {
+                                    new_statuses.insert(id.clone(), status);
+                                }
+                                Err(e) => {
+                                    // Fallback to last known battery status if the device is sleeping / not moving
+                                    let last_status = {
+                                        let s = state_clone.lock().unwrap();
+                                        s.device_statuses.get(&id).cloned()
+                                    };
+                                    if let Some(last) = last_status {
+                                        new_statuses.insert(id.clone(), last);
+                                    } else {
+                                        eprintln!("Failed to query battery for {}: {}", inst.default_name(), e);
+                                    }
+                                }
                             }
                         }
                     }
