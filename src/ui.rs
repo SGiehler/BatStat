@@ -13,10 +13,11 @@ pub struct SettingsWindow {
 
 impl SettingsWindow {
     pub fn new(
-        config: AppConfig,
+        mut config: AppConfig,
         active_devices: Vec<String>,
         device_statuses: std::collections::HashMap<String, DeviceBatteryStatus>,
     ) -> Self {
+        config.polling_interval_secs = config.polling_interval_secs.clamp(1, 60);
         Self {
             config,
             active_devices,
@@ -225,13 +226,13 @@ impl eframe::App for SettingsWindow {
                                             ui.visuals_mut().widgets.inactive.bg_fill = egui::Color32::from_rgb(0x39, 0x39, 0x52);
                                             ui.visuals_mut().widgets.inactive.fg_stroke = egui::Stroke::new(2.0, egui::Color32::from_rgb(0x4c, 0xc9, 0xf0));
                                             ui.spacing_mut().slider_width = ui.available_width() - 8.0;
-                                            ui.add(egui::Slider::new(&mut self.config.polling_interval_secs, 10..=3600).show_value(false).trailing_fill(true));
+                                            ui.add(egui::Slider::new(&mut self.config.polling_interval_secs, 1..=60).show_value(false).trailing_fill(true));
                                         });
                                         
                                         ui.horizontal(|ui| {
-                                            ui.label(egui::RichText::new("10s").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)));
+                                            ui.label(egui::RichText::new("1s").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)));
                                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                ui.label(egui::RichText::new("3600s").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)));
+                                                ui.label(egui::RichText::new("60s").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)));
                                             });
                                         });
                                         
