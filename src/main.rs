@@ -135,29 +135,23 @@ fn find_our_window() -> Option<windows_sys::Win32::Foundation::HWND> {
 fn show_settings_window() {
     if let Some(hwnd) = find_our_window() {
         unsafe {
-            println!("DEBUG: Found settings window HWND. Showing it via Win32...");
             windows_sys::Win32::UI::WindowsAndMessaging::ShowWindow(
                 hwnd,
                 windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOW,
             );
             windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow(hwnd);
         }
-    } else {
-        eprintln!("DEBUG: Could not find settings window HWND!");
     }
 }
 
 fn hide_settings_window() {
     if let Some(hwnd) = find_our_window() {
         unsafe {
-            println!("DEBUG: Found settings window HWND. Hiding it via Win32...");
             windows_sys::Win32::UI::WindowsAndMessaging::ShowWindow(
                 hwnd,
                 windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE,
             );
         }
-    } else {
-        eprintln!("DEBUG: Could not find settings window HWND to hide!");
     }
 }
 
@@ -202,7 +196,6 @@ impl BatStatApp {
 impl eframe::App for BatStatApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         if ctx.input(|i| i.viewport().close_requested()) {
-            println!("DEBUG (update): Close requested");
             if self.tray_icon.is_some() {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
                 self.visible = false;
@@ -240,7 +233,6 @@ impl eframe::App for BatStatApp {
             queue.drain(..).collect()
         };
         for event in menu_events {
-            println!("DEBUG (update): Processing MenuEvent ID={:?}, settings ID={:?}, exit ID={:?}", event.id, self.settings_item.id(), self.exit_item.id());
             if event.id == self.settings_item.id() {
                 self.visible = true;
                 let (config, active_ids, statuses) = {
@@ -330,13 +322,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    println!("DEBUG: Loading config...");
     let config = load_config();
 
-    println!("DEBUG: Setting up icons folder and generating color variants...");
     crate::config::setup_icons_folder();
     
-    println!("DEBUG: Initializing shared state...");
     let shared_state = Arc::new(Mutex::new(SharedState {
         config: config.clone(),
         active_device_ids: Vec::new(),
@@ -344,10 +333,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         last_notified: std::collections::HashMap::new(),
         request_poll: false,
     }));
-
-
-
-    println!("DEBUG: Spawning background polling thread...");
     // Spawn background polling thread
     let state_clone = Arc::clone(&shared_state);
     std::thread::spawn(move || {
@@ -456,7 +441,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
 
-    println!("DEBUG: Setting up native options...");
     // Run eframe Native UI Event Loop
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -468,21 +452,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let state_clone_ui = Arc::clone(&shared_state);
     
-    println!("DEBUG: Calling run_native...");
     eframe::run_native(
         "BatStat Settings",
         native_options,
         Box::new(move |cc| {
-            println!("DEBUG: Building tray menu inside run_native closure...");
             let tray_menu = tray_icon::menu::Menu::new();
             let settings_item = tray_icon::menu::MenuItem::new("Settings", true, None);
             let exit_item = tray_icon::menu::MenuItem::new("Exit", true, None);
             let _ = tray_menu.append_items(&[&settings_item, &exit_item]);
 
-            println!("DEBUG: Loading default icon...");
             let default_icon = load_icon_from_memory(include_bytes!("icons/ok.png"));
             
-            println!("DEBUG: Building tray icon...");
             let tray_icon = match TrayIconBuilder::new()
                 .with_menu(Box::new(tray_menu))
                 .with_tooltip("BatStat Battery Monitor")
@@ -490,7 +470,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .build()
             {
                 Ok(icon) => {
-                    println!("DEBUG: Tray icon built successfully.");
                     Some(icon)
                 }
                 Err(e) => {
@@ -509,11 +488,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let menu_queue = Arc::clone(&pending_menu);
             let menu_ctx = cc.egui_ctx.clone();
             MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
-                println!("DEBUG (set_event_handler): Menu event: {:?}", event);
                 if event.id == settings_id {
                     show_settings_window();
                 } else if event.id == exit_id {
-                    println!("DEBUG: Exit clicked. Exiting process immediately...");
                     std::process::exit(0);
                 }
                 menu_queue.lock().unwrap().push(event);
@@ -523,12 +500,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let tray_queue = Arc::clone(&pending_tray);
             let tray_ctx = cc.egui_ctx.clone();
             TrayIconEvent::set_event_handler(Some(move |event: TrayIconEvent| {
-                match event {
-                    TrayIconEvent::Move { .. } => {}
-                    _ => {
-                        println!("DEBUG (set_event_handler): Tray event: {:?}", event);
-                    }
-                }
                 if let TrayIconEvent::DoubleClick { .. } = event {
                     show_settings_window();
                 }
@@ -546,7 +517,5 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             )))
         }),
     )?;
-
-    println!("DEBUG: Main exiting successfully.");
     Ok(())
 }
