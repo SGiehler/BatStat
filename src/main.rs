@@ -379,18 +379,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
 
                     // Check low-battery thresholds and send alerts
-                    let devices_to_check = state.config.devices.clone();
-                    for dev_cfg in &devices_to_check {
-                        if !dev_cfg.enabled { continue; }
-                        if let Some(status) = state.device_statuses.get(&dev_cfg.unique_id).copied() {
-                            if status.is_online && status.percentage <= dev_cfg.threshold {
-                                let notified = state.last_notified.get(&dev_cfg.unique_id).cloned().unwrap_or(false);
-                                if !notified {
-                                    state.last_notified.insert(dev_cfg.unique_id.clone(), true);
-                                    trigger_notification(&dev_cfg.name, status.percentage);
+                    if state.config.enable_notifications {
+                        let devices_to_check = state.config.devices.clone();
+                        for dev_cfg in &devices_to_check {
+                            if !dev_cfg.enabled { continue; }
+                            if let Some(status) = state.device_statuses.get(&dev_cfg.unique_id).copied() {
+                                if status.is_online && status.percentage <= dev_cfg.threshold {
+                                    let notified = state.last_notified.get(&dev_cfg.unique_id).cloned().unwrap_or(false);
+                                    if !notified {
+                                        state.last_notified.insert(dev_cfg.unique_id.clone(), true);
+                                        trigger_notification(&dev_cfg.name, status.percentage);
+                                    }
+                                } else if !status.is_online || status.percentage > dev_cfg.threshold {
+                                    state.last_notified.insert(dev_cfg.unique_id.clone(), false);
                                 }
-                            } else if !status.is_online || status.percentage > dev_cfg.threshold {
-                                state.last_notified.insert(dev_cfg.unique_id.clone(), false);
                             }
                         }
                     }
@@ -406,7 +408,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("BatStat Settings")
-            .with_inner_size([450.0, 500.0]),
+            .with_inner_size([480.0, 540.0])
+            .with_resizable(false),
         ..Default::default()
     };
 

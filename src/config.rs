@@ -15,7 +15,13 @@ pub struct DeviceConfig {
 pub struct AppConfig {
     pub polling_interval_secs: u64,
     pub autostart: bool,
+    #[serde(default = "default_true")]
+    pub enable_notifications: bool,
     pub devices: Vec<DeviceConfig>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for AppConfig {
@@ -23,6 +29,7 @@ impl Default for AppConfig {
         Self {
             polling_interval_secs: 60,
             autostart: false,
+            enable_notifications: true,
             devices: Vec::new(),
         }
     }
