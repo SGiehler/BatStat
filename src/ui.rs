@@ -95,7 +95,8 @@ impl eframe::App for SettingsWindow {
         visuals.widgets.active.rounding = egui::Rounding::same(4.0);
         
         // Slider background track - must be lighter than panel_fill to show the horizontal line!
-        visuals.extreme_bg_color = egui::Color32::from_rgb(0x39, 0x39, 0x52);
+        visuals.extreme_bg_color = egui::Color32::from_rgb(0x4e, 0x4e, 0x70);
+        visuals.selection.bg_fill = egui::Color32::from_rgb(0x4c, 0xc9, 0xf0);
         
         ctx.set_visuals(visuals);
 
@@ -157,7 +158,6 @@ impl eframe::App for SettingsWindow {
                             eprintln!("Failed to save config: {}", e);
                         }
                         self.request_close = true;
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                     
                     ui.add_space(8.0);
@@ -171,7 +171,6 @@ impl eframe::App for SettingsWindow {
                     
                     if ui.add(cancel_btn).clicked() {
                         self.request_close = true;
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                 });
             });
@@ -222,7 +221,8 @@ impl eframe::App for SettingsWindow {
                                         ui.add_space(4.0);
                                         
                                         // Slider
-                                        ui.add(egui::Slider::new(&mut self.config.polling_interval_secs, 10..=3600).show_value(false));
+                                        let slider_width = ui.available_width();
+                                        ui.add_sized([slider_width, 20.0], egui::Slider::new(&mut self.config.polling_interval_secs, 10..=3600).show_value(false));
                                         
                                         ui.horizontal(|ui| {
                                             ui.label(egui::RichText::new("10s").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)));
@@ -460,7 +460,8 @@ impl eframe::App for SettingsWindow {
                                                     });
                                                 });
                                                 ui.add_space(2.0);
-                                                ui.add(egui::Slider::new(&mut dev.threshold, 5..=95).show_value(false));
+                                                let slider_width = ui.available_width();
+                                                ui.add_sized([slider_width, 20.0], egui::Slider::new(&mut dev.threshold, 5..=95).show_value(false));
                                             });
                                             
                                             // Row 4: Remove Button (only shown for offline/disconnected devices)
