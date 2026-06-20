@@ -148,9 +148,7 @@ pub fn setup_icons_folder() {
         
         for (name, bytes) in defaults {
             let path = dir.join(name);
-            if !path.exists() {
-                let _ = fs::write(path, bytes);
-            }
+            let _ = fs::write(path, bytes);
         }
         
         let color_variations = vec![
@@ -170,11 +168,122 @@ pub fn setup_icons_folder() {
             for (temp_name, temp_bytes) in &templates {
                 let filename = format!("low_{}_{}.png", temp_name, color_name);
                 let path = dir.join(&filename);
-                if !path.exists() {
-                    let colorized = colorize_icon(temp_bytes, rgba);
-                    let _ = fs::write(path, colorized);
-                }
+                let colorized = colorize_icon(temp_bytes, rgba);
+                let _ = fs::write(path, colorized);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn generate_pixel_icon(grid: &[&str]) -> Vec<u8> {
+        let height = grid.len();
+        let first_chars: Vec<char> = grid[0].chars().filter(|c| !c.is_whitespace()).collect();
+        let width = first_chars.len();
+        let mut img = image::ImageBuffer::<image::Rgba<u8>, Vec<u8>>::new(width as u32, height as u32);
+        for y in 0..height {
+            let chars: Vec<char> = grid[y].chars().filter(|c| !c.is_whitespace()).collect();
+            for x in 0..width {
+                let pixel = if chars[x] == '1' {
+                    image::Rgba([255u8, 255u8, 255u8, 255u8])
+                } else {
+                    image::Rgba([0u8, 0u8, 0u8, 0u8])
+                };
+                img.put_pixel(x as u32, y as u32, pixel);
+            }
+        }
+        let mut buffer = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut buffer, image::ImageFormat::Png).unwrap();
+        buffer.into_inner()
+    }
+
+    #[test]
+    fn generate_icons() {
+        let ok_grid = &[
+            "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+            "0 0 0 0 0 0 0 0 0 0 0 0 0 1 1 0",
+            "0 0 0 0 0 0 0 0 0 0 0 0 1 1 1 0",
+            "0 0 0 0 0 0 0 0 0 0 0 1 1 1 0 0",
+            "0 0 0 0 0 0 0 0 0 0 1 1 1 0 0 0",
+            "0 0 0 0 0 0 0 0 0 1 1 1 0 0 0 0",
+            "0 1 1 0 0 0 0 0 1 1 1 0 0 0 0 0",
+            "0 1 1 1 0 0 0 1 1 1 0 0 0 0 0 0",
+            "0 0 1 1 1 0 1 1 1 0 0 0 0 0 0 0",
+            "0 0 0 1 1 1 1 1 0 0 0 0 0 0 0 0",
+            "0 0 0 0 1 1 1 0 0 0 0 0 0 0 0 0",
+            "0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0",
+            "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+            "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+            "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+            "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+        ];
+
+        let mouse_grid = &[
+            "0 0 0 0 0 1 1 1 1 1 1 0 0 0 0 0",
+            "0 0 0 1 1 1 1 0 0 1 1 1 1 0 0 0",
+            "0 0 1 1 1 1 1 0 0 1 1 1 1 1 0 0",
+            "0 0 1 1 1 1 1 1 1 1 1 1 1 1 0 0",
+            "0 0 1 1 1 1 1 0 0 1 1 1 1 1 0 0",
+            "0 0 1 1 1 1 1 0 0 1 1 1 1 1 0 0",
+            "0 0 1 1 1 1 1 1 1 1 1 1 1 1 0 0",
+            "0 0 1 1 1 1 1 1 1 1 1 1 1 1 0 0",
+            "0 0 1 1 1 1 1 1 1 1 1 1 1 1 0 0",
+            "0 0 1 1 1 1 1 1 1 1 1 1 1 1 0 0",
+            "0 0 0 1 1 1 1 1 1 1 1 1 1 0 0 0",
+            "0 0 0 1 1 1 1 1 1 1 1 1 1 0 0 0",
+            "0 0 0 0 1 1 1 1 1 1 1 1 0 0 0 0",
+            "0 0 0 0 0 1 1 1 1 1 1 0 0 0 0 0",
+            "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+            "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+        ];
+
+        let gamepad_grid = &[
+            "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+            "0 0 0 0 0 1 1 1 1 1 1 0 0 0 0 0",
+            "0 0 1 1 1 1 1 1 1 1 1 1 1 1 0 0",
+            "0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 0",
+            "1 1 1 0 1 1 1 1 1 1 1 1 0 1 1 1",
+            "1 1 0 0 0 1 1 1 1 1 1 0 0 0 1 1",
+            "1 1 1 0 1 1 1 1 1 1 1 1 0 1 1 1",
+            "1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1",
+            "1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1",
+            "0 1 1 1 1 0 0 0 0 0 0 1 1 1 1 0",
+            "0 1 1 1 0 0 0 0 0 0 0 0 1 1 1 0",
+            "0 0 1 1 0 0 0 0 0 0 0 0 1 1 0 0",
+            "0 0 1 1 0 0 0 0 0 0 0 0 1 1 0 0",
+            "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+            "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+            "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+        ];
+
+        let buds_grid = &[
+            "0 0 0 0 0 1 1 1 1 1 1 0 0 0 0 0",
+            "0 0 0 1 1 1 1 1 1 1 1 1 1 0 0 0",
+            "0 0 1 1 1 0 0 0 0 0 0 1 1 1 0 0",
+            "0 1 1 1 0 0 0 0 0 0 0 0 1 1 1 0",
+            "0 1 1 0 0 0 0 0 0 0 0 0 0 1 1 0",
+            "0 1 1 0 0 0 0 0 0 0 0 0 0 1 1 0",
+            "1 1 1 1 0 0 0 0 0 0 0 0 1 1 1 1",
+            "1 1 1 1 0 0 0 0 0 0 0 0 1 1 1 1",
+            "1 1 1 1 0 0 0 0 0 0 0 0 1 1 1 1",
+            "1 1 1 1 0 0 0 0 0 0 0 0 1 1 1 1",
+            "1 1 1 1 0 0 0 0 0 0 0 0 1 1 1 1",
+            "0 1 1 1 0 0 0 0 0 0 0 0 1 1 1 0",
+            "0 0 1 1 0 0 0 0 0 0 0 0 1 1 0 0",
+            "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+            "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+            "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0",
+        ];
+
+        let base_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src").join("icons");
+        std::fs::create_dir_all(&base_dir).unwrap();
+
+        std::fs::write(base_dir.join("ok.png"), generate_pixel_icon(ok_grid)).unwrap();
+        std::fs::write(base_dir.join("low_mouse.png"), generate_pixel_icon(mouse_grid)).unwrap();
+        std::fs::write(base_dir.join("low_gamepad.png"), generate_pixel_icon(gamepad_grid)).unwrap();
+        std::fs::write(base_dir.join("low_buds.png"), generate_pixel_icon(buds_grid)).unwrap();
     }
 }

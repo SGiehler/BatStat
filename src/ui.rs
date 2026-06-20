@@ -9,6 +9,7 @@ pub struct SettingsWindow {
     pub device_statuses: std::collections::HashMap<String, DeviceBatteryStatus>,
     pub request_close: bool,
     pub request_poll: bool,
+    pub icon_textures: std::collections::HashMap<String, egui::TextureHandle>,
 }
 
 impl SettingsWindow {
@@ -24,6 +25,7 @@ impl SettingsWindow {
             device_statuses,
             request_close: false,
             request_poll: false,
+            icon_textures: std::collections::HashMap::new(),
         }
     }
 }
@@ -65,6 +67,35 @@ fn toggle_ui(ui: &mut egui::Ui, on: &mut bool) -> egui::Response {
 
 impl eframe::App for SettingsWindow {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if self.icon_textures.is_empty() {
+            if let Some(icons_dir) = crate::config::get_icons_dir_path() {
+                if let Ok(entries) = std::fs::read_dir(&icons_dir) {
+                    for entry in entries.flatten() {
+                        if let Ok(file_type) = entry.file_type() {
+                            if file_type.is_file() {
+                                let name = entry.file_name().to_string_lossy().into_owned();
+                                if name.ends_with(".png") || name.ends_with(".ico") {
+                                    let path = icons_dir.join(&name);
+                                    if let Ok(img) = image::open(&path) {
+                                        let size = [img.width() as _, img.height() as _];
+                                        let img_rgba = img.to_rgba8();
+                                        let pixels = img_rgba.as_flat_samples();
+                                        let color_image = egui::ColorImage::from_rgba_unmultiplied(size, pixels.as_slice());
+                                        let texture = ctx.load_texture(
+                                            &name,
+                                            color_image,
+                                            egui::TextureOptions::default()
+                                        );
+                                        self.icon_textures.insert(name, texture);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Set the custom dark-theme styling inspired by the MCP Stitch mockup
         let mut visuals = egui::Visuals::dark();
         
@@ -271,6 +302,32 @@ impl eframe::App for SettingsWindow {
                                                 toggle_ui(ui, &mut self.config.enable_notifications);
                                             });
                                         });
+
+                                        ui.add_space(10.0);
+                                        ui.separator();
+                                        ui.add_space(10.0);
+
+                                        // Custom Icons Folder Shortcut
+                                        ui.horizontal(|ui| {
+                                            ui.vertical(|ui| {
+                                                ui.label(egui::RichText::new("Custom Icons Folder").color(egui::Color32::WHITE).font(egui::FontId::proportional(13.0)));
+                                                ui.label(egui::RichText::new("Open directory where custom low battery icons are stored.").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)).italics());
+                                            });
+                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                let btn = egui::Button::new(
+                                                    egui::RichText::new("📁 Open Folder")
+                                                        .color(egui::Color32::WHITE)
+                                                        .font(egui::FontId::proportional(11.0))
+                                                        .strong()
+                                                ).fill(egui::Color32::from_rgb(0x2c, 0x2c, 0x4d)).rounding(4.0);
+
+                                                if ui.add(btn).clicked() {
+                                                    if let Some(dir) = crate::config::get_icons_dir_path() {
+                                                        let _ = std::process::Command::new("explorer").arg(dir).spawn();
+                                                    }
+                                                }
+                                            });
+                                        });
                                     });
                                 });
                         });
@@ -429,13 +486,6 @@ impl eframe::App for SettingsWindow {
                                             ui.horizontal(|ui| {
                                                 ui.label(egui::RichText::new("LOW BATTERY ICON").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)).strong());
                                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                    // Open Folder button
-                                                    if ui.button(egui::RichText::new("📁 Folder").font(egui::FontId::proportional(10.0))).clicked() {
-                                                        if let Some(dir) = crate::config::get_icons_dir_path() {
-                                                            let _ = std::process::Command::new("explorer").arg(dir).spawn();
-                                                        }
-                                                    }
-                                                    
                                                     // Reset button
                                                     if dev.low_battery_icon_path.is_some() {
                                                         if ui.button(egui::RichText::new("Reset").font(egui::FontId::proportional(10.0))).clicked() {
@@ -447,22 +497,65 @@ impl eframe::App for SettingsWindow {
                                                     let available_icons = crate::config::get_icon_list();
                                                     let current_selected = dev.low_battery_icon_path.as_deref().unwrap_or("Default");
                                                     
-                                                    egui::ComboBox::from_id_source(format!("icon_combo_{}", dev.unique_id))
+                                                    let default_icon_name = if dev.unique_id.starts_with("pulsar_") {
+                                                        "low_mouse.png"
+                                                    } else if dev.unique_id.starts_with("xbox_") {
+                                                        "low_gamepad.png"
+                                                    } else if dev.unique_id.starts_with("gamebuds") {
+                                                        "low_buds.png"
+                                                    } else {
+                                                        "ok.png"
+                                                    };
+                                                    let preview_icon_name = dev.low_battery_icon_path.clone().unwrap_or_else(|| default_icon_name.to_string());
+                                                    
+                                                    egui::ComboBox::new(format!("icon_combo_{}", dev.unique_id), "")
                                                         .selected_text(current_selected)
-                                                        .width(140.0)
+                                                        .width(160.0)
                                                         .show_ui(ui, |ui| {
-                                                            let mut is_default = dev.low_battery_icon_path.is_none();
-                                                            if ui.selectable_value(&mut is_default, true, "Default").clicked() {
-                                                                dev.low_battery_icon_path = None;
+                                                            // Default selection
+                                                            {
+                                                                let is_default = dev.low_battery_icon_path.is_none();
+                                                                let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 20.0), egui::Sense::click());
+                                                                if response.clicked() {
+                                                                    dev.low_battery_icon_path = None;
+                                                                }
+                                                                let visual = ui.style().interact(&response);
+                                                                if is_default || response.hovered() {
+                                                                    ui.painter().rect_filled(rect, 2.0, visual.bg_fill);
+                                                                }
+                                                                let image_rect = egui::Rect::from_min_size(rect.min + egui::vec2(4.0, 2.0), egui::vec2(16.0, 16.0));
+                                                                let text_pos = rect.min + egui::vec2(24.0, 4.0);
+                                                                if let Some(texture) = self.icon_textures.get(default_icon_name) {
+                                                                    ui.painter().image(texture.id(), image_rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
+                                                                }
+                                                                ui.painter().text(text_pos, egui::Align2::LEFT_TOP, "Default", egui::FontId::proportional(11.0), visual.fg_stroke.color);
                                                             }
                                                             
+                                                            // Custom options selection
                                                             for icon_name in &available_icons {
-                                                                let mut is_selected = dev.low_battery_icon_path.as_deref() == Some(icon_name);
-                                                                if ui.selectable_value(&mut is_selected, true, icon_name).clicked() {
+                                                                let is_selected = dev.low_battery_icon_path.as_deref() == Some(icon_name);
+                                                                let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 20.0), egui::Sense::click());
+                                                                if response.clicked() {
                                                                     dev.low_battery_icon_path = Some(icon_name.clone());
                                                                 }
+                                                                let visual = ui.style().interact(&response);
+                                                                if is_selected || response.hovered() {
+                                                                    ui.painter().rect_filled(rect, 2.0, visual.bg_fill);
+                                                                }
+                                                                let image_rect = egui::Rect::from_min_size(rect.min + egui::vec2(4.0, 2.0), egui::vec2(16.0, 16.0));
+                                                                let text_pos = rect.min + egui::vec2(24.0, 4.0);
+                                                                if let Some(texture) = self.icon_textures.get(icon_name) {
+                                                                    ui.painter().image(texture.id(), image_rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
+                                                                }
+                                                                ui.painter().text(text_pos, egui::Align2::LEFT_TOP, icon_name, egui::FontId::proportional(11.0), visual.fg_stroke.color);
                                                             }
                                                         });
+                                                    
+                                                    // Show preview next to the combobox
+                                                    if let Some(texture) = self.icon_textures.get(&preview_icon_name) {
+                                                        ui.image((texture.id(), egui::vec2(20.0, 20.0)));
+                                                        ui.add_space(4.0);
+                                                    }
                                                 });
                                             });
                                             
