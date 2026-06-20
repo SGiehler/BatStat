@@ -39,8 +39,8 @@ pub struct PulsarDeviceInstance {
 
 impl DeviceInstance for PulsarDeviceInstance {
     fn unique_id(&self) -> String {
-        // Create a unique id based on VID/PID and path
-        format!("pulsar_{:#06x}_{}", self.product_id, self.path.to_string_lossy())
+        // Path-independent unique ID to avoid multiple duplicate config entries
+        format!("pulsar_{:#06x}", self.product_id)
     }
 
     fn default_name(&self) -> String {
@@ -79,10 +79,6 @@ impl DeviceInstance for PulsarDeviceInstance {
         let percentage = buf[6];
         let charging = buf[7] != 0;
 
-        Ok(DeviceBatteryStatus {
-            percentage,
-            charging,
-            is_online: true,
-        })
+        Ok(DeviceBatteryStatus::simple(percentage, charging, true))
     }
 }

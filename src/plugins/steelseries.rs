@@ -13,9 +13,9 @@ impl DevicePlugin for SteelSeriesPlugin {
             if dev_info.vendor_id() == STEELSERIES_VENDOR_ID && dev_info.product_id() == GAMEBUDS_PID {
                 if dev_info.usage_page() == 0xffc0 || dev_info.interface_number() == 3 {
                     let path = dev_info.path().to_owned();
-                    // Return both Left and Right earbud instances for this device
-                    instances.push(Box::new(GameBudsLeftInstance { path: path.clone() }));
-                    instances.push(Box::new(GameBudsRightInstance { path }));
+                    // Return a single unified GameBuds instance
+                    instances.push(Box::new(GameBudsInstance { path }));
+                    break; // Only need one instance since it's path-independent and queries both ears
                 }
             }
         }
@@ -64,48 +64,46 @@ fn query_buds_raw(api: &HidApi, path: &std::ffi::CStr) -> Result<(u8, bool, bool
     ))
 }
 
-pub struct GameBudsLeftInstance {
+pub struct GameBudsInstance {
     path: std::ffi::CString,
 }
 
-impl DeviceInstance for GameBudsLeftInstance {
+impl DeviceInstance for GameBudsInstance {
     fn unique_id(&self) -> String {
-        format!("gamebuds_left_{}", self.path.to_string_lossy())
+        // Path-independent unique ID to avoid multiple duplicate config entries
+        "gamebuds".to_string()
     }
 
     fn default_name(&self) -> String {
-        "GameBuds - Left".to_string()
+        "SteelSeries Arctis GameBuds".to_string()
     }
 
     fn query_battery(&self, api: &HidApi) -> Result<DeviceBatteryStatus, String> {
-        let (left_pct, left_chg, left_on, _, _, _) = query_buds_raw(api, &self.path)?;
+        let (left_pct, left_chg, left_on, right_pct, right_chg, right_on) = query_buds_raw(api, &self.path)?;
+        
+        let is_online = left_on || right_on;
+        
+        // Use the minimum of left and right percentages if both are online,
+        // so that if either falls below the threshold, a low battery alert is triggered.
+        let percentage = match (left_on, right_on) {
+            (true, true) => left_pct.min(right_pct),
+            (true, false) => left_pct,
+            (false, true) => right_pct,
+            (false, false) => 0,
+        };
+        
+        let charging = left_chg || right_chg;
+
         Ok(DeviceBatteryStatus {
-            percentage: left_pct,
-            charging: left_chg,
-            is_online: left_on,
-        })
-    }
-}
-
-pub struct GameBudsRightInstance {
-    path: std::ffi::CString,
-}
-
-impl DeviceInstance for GameBudsRightInstance {
-    fn unique_id(&self) -> String {
-        format!("gamebuds_right_{}", self.path.to_string_lossy())
-    }
-
-    fn default_name(&self) -> String {
-        "GameBuds - Right".to_string()
-    }
-
-    fn query_battery(&self, api: &HidApi) -> Result<DeviceBatteryStatus, String> {
-        let (_, _, _, right_pct, right_chg, right_on) = query_buds_raw(api, &self.path)?;
-        Ok(DeviceBatteryStatus {
-            percentage: right_pct,
-            charging: right_chg,
-            is_online: right_on,
+            percentage,
+            charging,
+            is_online,
+            left_percentage: Some(left_pct),
+            right_percentage: Some(right_pct),
+            left_charging: Some(left_chg),
+            right_charging: Some(right_chg),
+            left_online: Some(left_on),
+            right_online: Some(right_on),
         })
     }
 }

@@ -65,11 +65,7 @@ impl DeviceInstance for XboxDeviceInstance {
             }
 
             if battery_info.BatteryType == BATTERY_TYPE_DISCONNECTED {
-                return Ok(DeviceBatteryStatus {
-                    percentage: 0,
-                    charging: false,
-                    is_online: false,
-                });
+                return Ok(DeviceBatteryStatus::simple(0, false, false));
             }
 
             let charging = battery_info.BatteryType == BATTERY_TYPE_WIRED;
@@ -83,11 +79,7 @@ impl DeviceInstance for XboxDeviceInstance {
                 _ => 50, // Unknown
             };
 
-            Ok(DeviceBatteryStatus {
-                percentage,
-                charging,
-                is_online: true,
-            })
+            Ok(DeviceBatteryStatus::simple(percentage, charging, true))
         }
     }
 }

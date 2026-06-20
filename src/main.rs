@@ -204,11 +204,11 @@ impl eframe::App for BatStatApp {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
             } else {
                 // Initialize UI state immediately in fallback window mode
-                let (config, active_ids) = {
+                let (config, active_ids, statuses) = {
                     let s = self.state.lock().unwrap();
-                    (s.config.clone(), s.active_device_ids.clone())
+                    (s.config.clone(), s.active_device_ids.clone(), s.device_statuses.clone())
                 };
-                self.ui_state = Some(crate::ui::SettingsWindow::new(config, active_ids));
+                self.ui_state = Some(crate::ui::SettingsWindow::new(config, active_ids, statuses));
             }
         }
 
@@ -229,11 +229,11 @@ impl eframe::App for BatStatApp {
             println!("DEBUG (update): Processing MenuEvent ID={:?}, settings ID={:?}, exit ID={:?}", event.id, self.settings_item.id(), self.exit_item.id());
             if event.id == self.settings_item.id() {
                 self.visible = true;
-                let (config, active_ids) = {
+                let (config, active_ids, statuses) = {
                     let s = self.state.lock().unwrap();
-                    (s.config.clone(), s.active_device_ids.clone())
+                    (s.config.clone(), s.active_device_ids.clone(), s.device_statuses.clone())
                 };
-                self.ui_state = Some(crate::ui::SettingsWindow::new(config, active_ids));
+                self.ui_state = Some(crate::ui::SettingsWindow::new(config, active_ids, statuses));
                 
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
@@ -252,11 +252,11 @@ impl eframe::App for BatStatApp {
             match event {
                 TrayIconEvent::DoubleClick { .. } => {
                     self.visible = true;
-                    let (config, active_ids) = {
+                    let (config, active_ids, statuses) = {
                         let s = self.state.lock().unwrap();
-                        (s.config.clone(), s.active_device_ids.clone())
+                        (s.config.clone(), s.active_device_ids.clone(), s.device_statuses.clone())
                     };
-                    self.ui_state = Some(crate::ui::SettingsWindow::new(config, active_ids));
+                    self.ui_state = Some(crate::ui::SettingsWindow::new(config, active_ids, statuses));
                     ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                     ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
                 }
