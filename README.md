@@ -12,7 +12,7 @@ BatStat is a lightweight, native Windows system tray battery monitor for wireles
 
 ## Supported Hardware
 
-BatStat uses a modular plugin architecture to scan and query devices:
+BatStat uses a modular plugin architecture to scan and query devices. For a complete list of technical specifications, vendor/product IDs, and connection types, see the [Supported Devices List](DEVICELIST.md).
 
 1. **Pulsar Wireless Gaming Mice** (via custom HID queries).
 2. **Xbox Controllers** (via modern Windows Gaming Input [WGI] APIs for precise percentages).
