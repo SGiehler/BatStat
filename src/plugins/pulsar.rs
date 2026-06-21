@@ -102,31 +102,38 @@ impl DeviceInstance for PulsarDeviceInstance {
             .map_err(|e| format!("HID write failed: {}", e))?;
 
         let mut buf = [0u8; 64];
-        let bytes_read = device.read_timeout(&mut buf, 1500)
+        let mut bytes_read = device.read_timeout(&mut buf, 1500)
             .map_err(|e| format!("HID read timeout: {}", e))?;
 
-        if bytes_read < 17 {
-            return Err(format!("Response too short: {} bytes, expected at least 17", bytes_read));
+        let mut attempts = 0;
+        loop {
+            if bytes_read >= 17 && buf[0] == REPORT_ID && buf[1] == CMD_POWER {
+                let raw_percentage = buf[6];
+                let charging = buf[7] != 0;
+                let voltage = ((buf[8] as u16) << 8) | (buf[9] as u16);
+
+                let percentage = if voltage > 0 {
+                    calculate_pulsar_percentage(voltage, charging)
+                } else {
+                    raw_percentage
+                };
+
+                return Ok(DeviceBatteryStatus::simple(percentage, charging, true));
+            }
+
+            attempts += 1;
+            if attempts > 50 {
+                return Err("Failed to find power report after 50 reads".to_string());
+            }
+
+            bytes_read = match device.read_timeout(&mut buf, 10) {
+                Ok(bytes) => bytes,
+                Err(e) => return Err(format!("HID read error during drain: {}", e)),
+            };
+            if bytes_read == 0 {
+                return Err("Power report not found in HID buffer".to_string());
+            }
         }
-
-        if buf[0] != REPORT_ID || buf[1] != CMD_POWER {
-            return Err(format!(
-                "Unexpected report ID or command: Report ID={:#x}, Command={:#x}",
-                buf[0], buf[1]
-            ));
-        }
-
-        let raw_percentage = buf[6];
-        let charging = buf[7] != 0;
-        let voltage = ((buf[8] as u16) << 8) | (buf[9] as u16);
-
-        let percentage = if voltage > 0 {
-            calculate_pulsar_percentage(voltage, charging)
-        } else {
-            raw_percentage
-        };
-
-        Ok(DeviceBatteryStatus::simple(percentage, charging, true))
     }
 }
 

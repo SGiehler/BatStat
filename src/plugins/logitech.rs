@@ -65,31 +65,32 @@ impl DeviceInstance for LogitechDeviceInstance {
             .map_err(|e| format!("HID write failed for GetFeature: {}", e))?;
 
         let mut buf = [0u8; 64];
-        let bytes_read = device.read_timeout(&mut buf, 150)
+        let mut bytes_read = device.read_timeout(&mut buf, 150)
             .map_err(|e| format!("HID read timeout for GetFeature: {}", e))?;
 
-        if bytes_read == 0 {
-            return Ok(DeviceBatteryStatus::Offline);
-        }
+        let mut attempts = 0;
+        let feature_idx = loop {
+            if bytes_read >= 20 && buf[0] == 0x11 && buf[1] == 0x01 && buf[2] == 0x00 && buf[3] == 0x00 {
+                let idx = buf[4];
+                if idx == 0 {
+                    return Err("Unified Battery feature (0x1004) not supported by device".to_string());
+                }
+                break idx;
+            }
 
-        if bytes_read < 20 {
-            return Err(format!("GetFeature response too short: {} bytes", bytes_read));
-        }
+            attempts += 1;
+            if attempts > 50 {
+                return Err("Failed to find GetFeature response after 50 reads".to_string());
+            }
 
-        // Response format:
-        // buf[0] == 0x11
-        // buf[1] == 0x01 (Device index)
-        // buf[2] == 0x00 (Root feature)
-        // buf[3] == 0x00 (Function ID for GetFeature)
-        // buf[4] == Feature Index (if > 0, found!)
-        if buf[0] != 0x11 || buf[1] != 0x01 || buf[2] != 0x00 || buf[3] != 0x00 {
-            return Err("Unexpected response to GetFeature request".to_string());
-        }
-
-        let feature_idx = buf[4];
-        if feature_idx == 0 {
-            return Err("Unified Battery feature (0x1004) not supported by device".to_string());
-        }
+            bytes_read = match device.read_timeout(&mut buf, 10) {
+                Ok(bytes) => bytes,
+                Err(e) => return Err(format!("HID read error during GetFeature drain: {}", e)),
+            };
+            if bytes_read == 0 {
+                return Err("GetFeature response not found in HID buffer".to_string());
+            }
+        };
 
         // 2. Query Unified Battery Status from the discovered feature index
         let mut status_req = [0u8; 20];
@@ -101,28 +102,30 @@ impl DeviceInstance for LogitechDeviceInstance {
         device.write(&status_req)
             .map_err(|e| format!("HID write failed for GetBatteryStatus: {}", e))?;
 
-        let bytes_read = device.read_timeout(&mut buf, 150)
+        bytes_read = device.read_timeout(&mut buf, 150)
             .map_err(|e| format!("HID read timeout for GetBatteryStatus: {}", e))?;
 
-        if bytes_read == 0 {
-            return Ok(DeviceBatteryStatus::Offline);
-        }
+        attempts = 0;
+        let (percentage, charging) = loop {
+            if bytes_read >= 20 && buf[0] == 0x11 && buf[1] == 0x01 && buf[2] == feature_idx && buf[3] == CMD_UNIFIED_BATTERY_GET_STATUS {
+                let pct = buf[4];
+                let chg = buf[6] == 1; // 1 = Recharging/charging
+                break (pct, chg);
+            }
 
-        if bytes_read < 20 {
-            return Err(format!("GetBatteryStatus response too short: {} bytes", bytes_read));
-        }
+            attempts += 1;
+            if attempts > 50 {
+                return Err("Failed to find GetBatteryStatus response after 50 reads".to_string());
+            }
 
-        // Check if report ID, device index, feature index, and command ID match
-        if buf[0] != 0x11 || buf[1] != 0x01 || buf[2] != feature_idx || buf[3] != CMD_UNIFIED_BATTERY_GET_STATUS {
-            return Err("Unexpected response to GetBatteryStatus request".to_string());
-        }
-
-        // Parameters:
-        // buf[4] == state of charge percentage (0-100)
-        // buf[5] == next level / level class (we don't need this)
-        // buf[6] == charging status (0 = Discharging, 1 = Recharging/Charging, etc.)
-        let percentage = buf[4];
-        let charging = buf[6] == 1; // 1 = Recharging/charging
+            bytes_read = match device.read_timeout(&mut buf, 10) {
+                Ok(bytes) => bytes,
+                Err(e) => return Err(format!("HID read error during GetBatteryStatus drain: {}", e)),
+            };
+            if bytes_read == 0 {
+                return Err("GetBatteryStatus response not found in HID buffer".to_string());
+            }
+        };
 
         Ok(DeviceBatteryStatus::simple(percentage, charging, true))
     }

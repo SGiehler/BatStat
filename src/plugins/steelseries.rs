@@ -34,35 +34,54 @@ fn query_buds_raw(api: &HidApi, path: &std::ffi::CStr) -> Result<(u8, bool, bool
         .map_err(|e| format!("HID write failed: {}", e))?;
 
     let mut buf = [0u8; 64];
-    let bytes_read = device.read_timeout(&mut buf, 1500)
+    let mut bytes_read = device.read_timeout(&mut buf, 1500)
         .map_err(|e| format!("HID read timeout: {}", e))?;
 
-    if bytes_read < 14 {
-        return Err(format!("Response too short: {} bytes", bytes_read));
-    }
+    let mut attempts = 0;
+    let (left_pct, left_chg, left_on, right_pct, right_chg, right_on) = loop {
+        if bytes_read >= 14 && buf[0] == 0xb0 {
+            // Charging state: buf[1] for Left, buf[2] for Right (1 = charging, 0 = discharging/not in case)
+            let left_charging = buf[1] == 1;
+            let right_charging = buf[2] == 1;
 
-    if buf[0] != 0xb0 {
-        return Err(format!("Unexpected response code: {:#x}, expected 0xb0", buf[0]));
-    }
+            // Connection state: buf[13] bitmask (bit 0 = Left online, bit 1 = Right online)
+            let left_online = (buf[13] & 0x01) != 0;
+            let right_online = (buf[13] & 0x02) != 0;
 
-    // Charging state: buf[1] for Left, buf[2] for Right (1 = charging, 0 = discharging/not in case)
-    let left_charging = buf[1] == 1;
-    let right_charging = buf[2] == 1;
+            let left_percentage = buf[5];
+            let right_percentage = buf[6];
 
-    // Connection state: buf[13] bitmask (bit 0 = Left online, bit 1 = Right online)
-    let left_online = (buf[13] & 0x01) != 0;
-    let right_online = (buf[13] & 0x02) != 0;
+            break (
+                left_percentage,
+                left_charging,
+                left_online,
+                right_percentage,
+                right_charging,
+                right_online,
+            );
+        }
 
-    let left_percentage = buf[5];
-    let right_percentage = buf[6];
+        attempts += 1;
+        if attempts > 50 {
+            return Err("Failed to find GameBuds response after 50 reads".to_string());
+        }
+
+        bytes_read = match device.read_timeout(&mut buf, 10) {
+            Ok(bytes) => bytes,
+            Err(e) => return Err(format!("HID read error during drain: {}", e)),
+        };
+        if bytes_read == 0 {
+            return Err("GameBuds response not found in HID buffer".to_string());
+        }
+    };
 
     Ok((
-        left_percentage,
-        left_charging,
-        left_online,
-        right_percentage,
-        right_charging,
-        right_online,
+        left_pct,
+        left_chg,
+        left_on,
+        right_pct,
+        right_chg,
+        right_on,
     ))
 }
 
