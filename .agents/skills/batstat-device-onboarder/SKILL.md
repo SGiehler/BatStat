@@ -121,3 +121,5 @@ impl DeviceInstance for MyDeviceInstance {
 - **Forgetting to Clean Up**: Always delete `list_devices.rs` and `probe_device.rs` from `src/bin/` after executing the scan, keeping the git workspace clean.
 - **Incorrect Usage/Usage Page**: Always target the vendor collection (usually `usage_page == 0xff00` and `usage == 0x0002` or `0x0001`). Querying standard mouse/keyboard interfaces will result in `Unzulässige Funktion` (Invalid Function) errors.
 - **Hardcoding Device Index**: Receivers can have multiple devices connected. Use the discovered index (usually `0x01` but sometimes `0x02` or higher) in the query payloads.
+- **Improper Timeout Handling (Stuck Online Status)**: When a wireless device is turned off or falls asleep, queries to it will time out (read 0 bytes). In the `query_battery` implementation, you **MUST** map a 0-byte read (timeout) to `Ok(DeviceBatteryStatus::Offline)`. Returning a generic `Err(...)` will trigger the main app's fallback logic and keep the device stuck as online in the UI.
+
