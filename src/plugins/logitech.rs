@@ -65,6 +65,10 @@ impl DeviceInstance for LogitechDeviceInstance {
         let bytes_read = device.read_timeout(&mut buf, 150)
             .map_err(|e| format!("HID read timeout for GetFeature: {}", e))?;
 
+        if bytes_read == 0 {
+            return Ok(DeviceBatteryStatus::Offline);
+        }
+
         if bytes_read < 20 {
             return Err(format!("GetFeature response too short: {} bytes", bytes_read));
         }
@@ -96,6 +100,10 @@ impl DeviceInstance for LogitechDeviceInstance {
 
         let bytes_read = device.read_timeout(&mut buf, 150)
             .map_err(|e| format!("HID read timeout for GetBatteryStatus: {}", e))?;
+
+        if bytes_read == 0 {
+            return Ok(DeviceBatteryStatus::Offline);
+        }
 
         if bytes_read < 20 {
             return Err(format!("GetBatteryStatus response too short: {} bytes", bytes_read));
