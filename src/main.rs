@@ -350,6 +350,13 @@ impl eframe::App for BatStatApp {
                 // Sync live state from background thread and handle manual scan request
                 {
                     let mut s = self.state.lock().unwrap();
+                    
+                    if ui_state.device_removed {
+                        s.config = ui_state.config.clone();
+                        let _ = crate::config::save_config(&s.config);
+                        ui_state.device_removed = false;
+                    }
+                    
                     ui_state.active_devices = s.active_device_ids.clone();
                     ui_state.device_statuses = s.device_statuses.clone();
                     

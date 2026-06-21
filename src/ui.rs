@@ -9,6 +9,7 @@ pub struct SettingsWindow {
     pub device_statuses: std::collections::HashMap<String, DeviceBatteryStatus>,
     pub request_close: bool,
     pub request_poll: bool,
+    pub device_removed: bool,
     pub icon_textures: std::collections::HashMap<String, egui::TextureHandle>,
 }
 
@@ -25,6 +26,7 @@ impl SettingsWindow {
             device_statuses,
             request_close: false,
             request_poll: false,
+            device_removed: false,
             icon_textures: std::collections::HashMap::new(),
         }
     }
@@ -583,6 +585,7 @@ impl eframe::App for SettingsWindow {
                             
                             if let Some(idx) = to_remove {
                                 self.config.devices.remove(idx);
+                                self.device_removed = true;
                             }
                         });
                     });
