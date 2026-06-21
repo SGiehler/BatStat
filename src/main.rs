@@ -75,17 +75,29 @@ fn update_tray_icon_main(
         (low, s.device_statuses.clone())
     };
 
-    static mut CYCLE_INDEX: usize = 0;
+    static mut LAST_DISPLAYED_ID: [u8; 64] = [0; 64];
+    static mut LAST_DISPLAYED_LEN: usize = 0;
 
     let icon = if low_devices.is_empty() {
+        unsafe {
+            LAST_DISPLAYED_LEN = 0;
+        }
         let _ = tray_icon.set_tooltip(Some("BatStat Battery Monitor"));
         load_icon_from_memory(include_bytes!("icons/ok.png"))
     } else {
         unsafe {
-            if CYCLE_INDEX >= low_devices.len() {
-                CYCLE_INDEX = 0;
-            }
-            let dev = &low_devices[CYCLE_INDEX];
+            let last_id_str = std::str::from_utf8(&LAST_DISPLAYED_ID[..LAST_DISPLAYED_LEN]).unwrap_or("");
+            let index = if LAST_DISPLAYED_LEN > 0 {
+                if let Some(pos) = low_devices.iter().position(|d| d.unique_id == last_id_str) {
+                    (pos + 1) % low_devices.len()
+                } else {
+                    0
+                }
+            } else {
+                0
+            };
+
+            let dev = &low_devices[index];
             
             let pct_str = if let Some(status) = device_statuses.get(&dev.unique_id) {
                 format!("{}%", status.effective_percentage())
@@ -95,7 +107,10 @@ fn update_tray_icon_main(
             let tooltip_msg = format!("Low Battery: {} ({})", dev.name, pct_str);
             let _ = tray_icon.set_tooltip(Some(&tooltip_msg));
 
-            CYCLE_INDEX = (CYCLE_INDEX + 1) % low_devices.len();
+            let id_bytes = dev.unique_id.as_bytes();
+            let len = id_bytes.len().min(64);
+            LAST_DISPLAYED_ID[..len].copy_from_slice(&id_bytes[..len]);
+            LAST_DISPLAYED_LEN = len;
 
             if let Some(ref path_str) = dev.low_battery_icon_path {
                 let resolved_path = if !path_str.contains('\\') && !path_str.contains('/') {
