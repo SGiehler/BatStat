@@ -307,4 +307,20 @@ mod tests {
         std::fs::write(base_dir.join("low_buds.png"), generate_pixel_icon(buds_grid)).unwrap();
         std::fs::write(base_dir.join("low_keyboard.png"), generate_pixel_icon(keyboard_grid)).unwrap();
     }
+
+    #[test]
+    fn test_removal_simulation() {
+        let mut config = super::AppConfig::default();
+        config.devices.push(super::DeviceConfig {
+            unique_id: "xbox_slot_0".to_string(),
+            name: "Xbox Controller (Slot 0)".to_string(),
+            enabled: true,
+            threshold: 20,
+            low_battery_icon_path: None,
+        });
+        
+        assert_eq!(config.devices.len(), 1);
+        config.devices.remove(0);
+        assert_eq!(config.devices.len(), 0);
+    }
 }

@@ -19,6 +19,11 @@ struct SharedState {
     device_statuses: std::collections::HashMap<String, DeviceBatteryStatus>,
     last_notified: std::collections::HashMap<String, bool>,
     request_poll: bool,
+    settings_item_id: Option<tray_icon::menu::MenuId>,
+    exit_item_id: Option<tray_icon::menu::MenuId>,
+    has_tray: bool,
+    tray_thread_id: Option<u32>,
+    initialized: bool,
 }
 
 fn load_icon_from_memory(bytes: &[u8]) -> tray_icon::Icon {
@@ -57,23 +62,26 @@ fn trigger_notification(name: &str, percentage: u8) {
         .show();
 }
 
-fn update_tray_icon_main(
+fn update_tray_icon_and_menu_local(
     state: &Arc<Mutex<SharedState>>,
-    tray_icon: &mut tray_icon::TrayIcon,
+    tray: &mut tray_icon::TrayIcon,
+    settings_item: &MenuItem,
+    exit_item: &MenuItem,
 ) {
-    let (low_devices, device_statuses) = {
-        let s = state.lock().unwrap();
-        let mut low = Vec::new();
-        for dev_cfg in &s.config.devices {
-            if !dev_cfg.enabled { continue; }
-            if let Some(status) = s.device_statuses.get(&dev_cfg.unique_id) {
-                if status.is_online() && status.effective_percentage() <= dev_cfg.threshold {
-                    low.push(dev_cfg.clone());
-                }
+    let s = state.lock().unwrap();
+
+    let mut low_devices = Vec::new();
+    for dev_cfg in &s.config.devices {
+        if !dev_cfg.enabled { continue; }
+        if let Some(status) = s.device_statuses.get(&dev_cfg.unique_id) {
+            if status.is_online() && status.effective_percentage() <= dev_cfg.threshold {
+                low_devices.push(dev_cfg.clone());
             }
         }
-        (low, s.device_statuses.clone())
-    };
+    }
+
+    // Capture device statuses map to avoid double borrowing
+    let device_statuses = s.device_statuses.clone();
 
     static mut LAST_DISPLAYED_ID: [u8; 64] = [0; 64];
     static mut LAST_DISPLAYED_LEN: usize = 0;
@@ -82,7 +90,7 @@ fn update_tray_icon_main(
         unsafe {
             LAST_DISPLAYED_LEN = 0;
         }
-        let _ = tray_icon.set_tooltip(Some("BatStat Battery Monitor"));
+        let _ = tray.set_tooltip(Some("BatStat Battery Monitor"));
         load_icon_from_memory(include_bytes!("icons/ok.png"))
     } else {
         unsafe {
@@ -105,7 +113,7 @@ fn update_tray_icon_main(
                 "Unknown".to_string()
             };
             let tooltip_msg = format!("Low Battery: {} ({})", dev.name, pct_str);
-            let _ = tray_icon.set_tooltip(Some(&tooltip_msg));
+            let _ = tray.set_tooltip(Some(&tooltip_msg));
 
             let id_bytes = dev.unique_id.as_bytes();
             let len = id_bytes.len().min(64);
@@ -135,16 +143,8 @@ fn update_tray_icon_main(
         }
     };
 
-    let _ = tray_icon.set_icon(Some(icon));
-}
+    let _ = tray.set_icon(Some(icon));
 
-fn update_tray_menu(
-    state: &Arc<Mutex<SharedState>>,
-    tray_icon: &mut tray_icon::TrayIcon,
-    settings_item: &MenuItem,
-    exit_item: &MenuItem,
-) {
-    let s = state.lock().unwrap();
     let new_menu = Menu::new();
     let mut has_devices = false;
 
@@ -187,7 +187,7 @@ fn update_tray_menu(
     }
 
     let _ = new_menu.append_items(&[settings_item, exit_item]);
-    let _ = tray_icon.set_menu(Some(Box::new(new_menu)));
+    let _ = tray.set_menu(Some(Box::new(new_menu)));
 }
 
 fn truncate_string(s: &str, max_len: usize) -> String {
@@ -242,14 +242,24 @@ fn hide_settings_window() {
     }
 }
 
+fn request_tray_update(state: &Arc<Mutex<SharedState>>) {
+    let tid = state.lock().unwrap().tray_thread_id;
+    if let Some(id) = tid {
+        unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::PostThreadMessageW(
+                id,
+                windows_sys::Win32::UI::WindowsAndMessaging::WM_USER + 100,
+                0,
+                0,
+            );
+        }
+    }
+}
+
 struct BatStatApp {
     state: Arc<Mutex<SharedState>>,
-    settings_item: tray_icon::menu::MenuItem,
-    exit_item: tray_icon::menu::MenuItem,
-    tray_icon: Option<tray_icon::TrayIcon>,
     ui_state: Option<crate::ui::SettingsWindow>,
     visible: bool,
-    last_icon_update: std::time::Instant,
     first_frame: bool,
     pending_menu_events: Arc<Mutex<Vec<MenuEvent>>>,
     pending_tray_events: Arc<Mutex<Vec<TrayIconEvent>>>,
@@ -258,21 +268,14 @@ struct BatStatApp {
 impl BatStatApp {
     fn new(
         state: Arc<Mutex<SharedState>>,
-        settings_item: tray_icon::menu::MenuItem,
-        exit_item: tray_icon::menu::MenuItem,
-        tray_icon: Option<tray_icon::TrayIcon>,
         pending_menu_events: Arc<Mutex<Vec<MenuEvent>>>,
         pending_tray_events: Arc<Mutex<Vec<TrayIconEvent>>>,
     ) -> Self {
-        let visible = tray_icon.is_none();
+        let visible = !state.lock().unwrap().has_tray;
         Self {
             state,
-            settings_item,
-            exit_item,
-            tray_icon,
             ui_state: None,
             visible,
-            last_icon_update: std::time::Instant::now(),
             first_frame: true,
             pending_menu_events,
             pending_tray_events,
@@ -282,8 +285,17 @@ impl BatStatApp {
 
 impl eframe::App for BatStatApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        let (settings_id, exit_id, has_tray) = {
+            let s = self.state.lock().unwrap();
+            (
+                s.settings_item_id.clone(),
+                s.exit_item_id.clone(),
+                s.has_tray,
+            )
+        };
+
         if ctx.input(|i| i.viewport().close_requested()) {
-            if self.tray_icon.is_some() {
+            if has_tray {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
                 self.visible = false;
                 self.ui_state = None;
@@ -294,10 +306,9 @@ impl eframe::App for BatStatApp {
         if self.first_frame {
             self.first_frame = false;
             // Hide the window immediately if we have a tray icon
-            if let Some(ref mut tray) = self.tray_icon {
+            if has_tray {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
-                update_tray_icon_main(&self.state, tray);
-                update_tray_menu(&self.state, tray, &self.settings_item, &self.exit_item);
+                request_tray_update(&self.state);
             } else {
                 // Initialize UI state immediately in fallback window mode
                 let (config, active_ids, statuses) = {
@@ -308,22 +319,13 @@ impl eframe::App for BatStatApp {
             }
         }
 
-        // Cycle through tray icons for low devices every 3 seconds
-        if self.last_icon_update.elapsed() >= std::time::Duration::from_secs(3) {
-            self.last_icon_update = std::time::Instant::now();
-            if let Some(ref mut tray) = self.tray_icon {
-                update_tray_icon_main(&self.state, tray);
-                update_tray_menu(&self.state, tray, &self.settings_item, &self.exit_item);
-            }
-        }
-
         // Process queued menu events
         let menu_events: Vec<MenuEvent> = {
             let mut queue = self.pending_menu_events.lock().unwrap();
             queue.drain(..).collect()
         };
         for event in menu_events {
-            if event.id == self.settings_item.id() {
+            if settings_id.as_ref() == Some(&event.id) {
                 self.visible = true;
                 let (config, active_ids, statuses) = {
                     let s = self.state.lock().unwrap();
@@ -333,7 +335,7 @@ impl eframe::App for BatStatApp {
                 
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-            } else if event.id == self.exit_item.id() {
+            } else if exit_id.as_ref() == Some(&event.id) {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 return;
             }
@@ -363,6 +365,7 @@ impl eframe::App for BatStatApp {
         if self.visible {
             if let Some(ref mut ui_state) = self.ui_state {
                 // Sync live state from background thread and handle manual scan request
+                let mut needs_tray_update = false;
                 {
                     let mut s = self.state.lock().unwrap();
                     
@@ -370,6 +373,7 @@ impl eframe::App for BatStatApp {
                         s.config = ui_state.config.clone();
                         let _ = crate::config::save_config(&s.config);
                         ui_state.device_removed = false;
+                        needs_tray_update = true;
                     }
                     
                     ui_state.active_devices = s.active_device_ids.clone();
@@ -387,6 +391,9 @@ impl eframe::App for BatStatApp {
                         ui_state.request_poll = false;
                     }
                 }
+                if needs_tray_update {
+                    request_tray_update(&self.state);
+                }
                 ui_state.update(ctx, frame);
                 if ui_state.request_close {
                     // Sync main config from UI
@@ -394,17 +401,14 @@ impl eframe::App for BatStatApp {
                         let mut s = self.state.lock().unwrap();
                         s.config = ui_state.config.clone();
                     }
-                    if self.tray_icon.is_none() {
+                    if !has_tray {
                         // In fallback mode, closing the window exits the app
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     } else {
                         self.visible = false;
                         self.ui_state = None;
                         hide_settings_window();
-                        if let Some(ref mut tray) = self.tray_icon {
-                            update_tray_icon_main(&self.state, tray);
-                            update_tray_menu(&self.state, tray, &self.settings_item, &self.exit_item);
-                        }
+                        request_tray_update(&self.state);
                     }
                 }
             }
@@ -416,6 +420,22 @@ impl eframe::App for BatStatApp {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    std::panic::set_hook(Box::new(|info| {
+        let backtrace = std::backtrace::Backtrace::force_capture();
+        let msg = match info.payload().downcast_ref::<&str>() {
+            Some(s) => *s,
+            None => match info.payload().downcast_ref::<String>() {
+                Some(s) => &**s,
+                None => "Box<dyn Any>",
+            },
+        };
+        let location = info.location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "unknown location".to_string());
+        let log_content = format!("Panic: {}\nLocation: {}\nBacktrace:\n{:?}", msg, location, backtrace);
+        let _ = std::fs::write("c:\\Users\\Gila\\dev\\BatStat\\panic.log", log_content);
+    }));
+
     unsafe {
         let _ = windows_sys::Win32::System::Com::CoInitializeEx(
             std::ptr::null(),
@@ -433,10 +453,55 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         device_statuses: std::collections::HashMap::new(),
         last_notified: std::collections::HashMap::new(),
         request_poll: false,
+        settings_item_id: None,
+        exit_item_id: None,
+        has_tray: false,
+        tray_thread_id: None,
+        initialized: false,
     }));
-    // Spawn background polling thread
+
+    // Spawn background dedicated Tray + Polling thread
     let state_clone = Arc::clone(&shared_state);
     std::thread::spawn(move || {
+        unsafe {
+            let _ = windows_sys::Win32::System::Com::CoInitializeEx(
+                std::ptr::null(),
+                windows_sys::Win32::System::Com::COINIT_APARTMENTTHREADED as u32,
+            );
+        }
+
+        let tray_menu = tray_icon::menu::Menu::new();
+        let settings_item = tray_icon::menu::MenuItem::new("Settings", true, None);
+        let exit_item = tray_icon::menu::MenuItem::new("Exit", true, None);
+        let _ = tray_menu.append_items(&[&settings_item, &exit_item]);
+
+        let default_icon = load_icon_from_memory(include_bytes!("icons/ok.png"));
+        
+        let mut tray_icon = match TrayIconBuilder::new()
+            .with_menu(Box::new(tray_menu))
+            .with_tooltip("BatStat Battery Monitor")
+            .with_icon(default_icon)
+            .build()
+        {
+            Ok(icon) => {
+                let mut s = state_clone.lock().unwrap();
+                s.settings_item_id = Some(settings_item.id().clone());
+                s.exit_item_id = Some(exit_item.id().clone());
+                s.has_tray = true;
+                Some(icon)
+            }
+            Err(e) => {
+                eprintln!("WARNING: Failed to build tray icon: {:?}. Running in window fallback mode.", e);
+                None
+            }
+        };
+
+        // Mark as initialized
+        {
+            let mut s = state_clone.lock().unwrap();
+            s.initialized = true;
+        }
+
         let plugins: Vec<Box<dyn DevicePlugin>> = vec![
             Box::new(plugins::pulsar::PulsarPlugin),
             Box::new(plugins::xbox::XboxPlugin),
@@ -444,103 +509,156 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ];
 
         let mut last_poll = std::time::Instant::now() - std::time::Duration::from_secs(3600);
+        let mut last_cycle = std::time::Instant::now() - std::time::Duration::from_secs(3600);
 
-        loop {
-            let (polling_interval, request_poll) = {
-                let mut state = state_clone.lock().unwrap();
-                let req = state.request_poll;
-                if req {
-                    state.request_poll = false;
-                }
-                (state.config.polling_interval_secs, req)
-            };
+        // Store the thread ID
+        let tid = unsafe { windows_sys::Win32::System::Threading::GetCurrentThreadId() };
+        {
+            let mut s = state_clone.lock().unwrap();
+            s.tray_thread_id = Some(tid);
+        }
 
-            if request_poll || last_poll.elapsed() >= std::time::Duration::from_secs(polling_interval) {
-                last_poll = std::time::Instant::now();
-                
-                if let Ok(api) = hidapi::HidApi::new() {
-                    let mut active_instances = Vec::new();
-                    for plugin in &plugins {
-                        active_instances.extend(plugin.scan(&api));
-                    }
+        // Set a timer to wake us up every 1000ms
+        let _timer = unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::SetTimer(
+                std::ptr::null_mut(),
+                0,
+                1000,
+                None,
+            )
+        };
 
-                    let mut active_ids = Vec::new();
-                    let mut new_statuses = std::collections::HashMap::new();
+        unsafe {
+            let mut msg = std::mem::zeroed();
+            while windows_sys::Win32::UI::WindowsAndMessaging::GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
+                // If it's a timer message or a user message to wake up:
+                if msg.message == windows_sys::Win32::UI::WindowsAndMessaging::WM_TIMER
+                    || msg.message == windows_sys::Win32::UI::WindowsAndMessaging::WM_USER + 100
+                {
+                    let is_forced_update = msg.message == windows_sys::Win32::UI::WindowsAndMessaging::WM_USER + 100;
 
-                    for inst in &active_instances {
-                        let id = inst.unique_id();
-                        if !active_ids.contains(&id) {
-                            active_ids.push(id.clone());
+                    let (polling_interval, request_poll) = {
+                        let mut state = state_clone.lock().unwrap();
+                        let req = state.request_poll;
+                        if req {
+                            state.request_poll = false;
                         }
+                        (state.config.polling_interval_secs, req)
+                    };
 
-                        if !new_statuses.contains_key(&id) {
-                            match inst.query_battery(&api) {
-                                Ok(status) => {
-                                    new_statuses.insert(id.clone(), status);
+                    let mut did_poll = false;
+                    if request_poll || last_poll.elapsed() >= std::time::Duration::from_secs(polling_interval) {
+                        last_poll = std::time::Instant::now();
+                        
+                        if let Ok(api) = hidapi::HidApi::new() {
+                            let mut active_instances = Vec::new();
+                            for plugin in &plugins {
+                                active_instances.extend(plugin.scan(&api));
+                            }
+
+                            let mut active_ids = Vec::new();
+                            let mut new_statuses = std::collections::HashMap::new();
+
+                            for inst in &active_instances {
+                                let id = inst.unique_id();
+                                if !active_ids.contains(&id) {
+                                    active_ids.push(id.clone());
                                 }
-                                Err(e) => {
-                                    // Fallback to last known battery status if the device is sleeping / not moving
-                                    let last_status = {
-                                        let s = state_clone.lock().unwrap();
-                                        s.device_statuses.get(&id).cloned()
-                                    };
-                                    if let Some(last) = last_status {
-                                        new_statuses.insert(id.clone(), last);
-                                    } else {
-                                        eprintln!("Failed to query battery for {}: {}", inst.default_name(), e);
+
+                                if !new_statuses.contains_key(&id) {
+                                    match inst.query_battery(&api) {
+                                        Ok(status) => {
+                                            new_statuses.insert(id.clone(), status);
+                                        }
+                                        Err(e) => {
+                                            // Fallback to last known battery status if the device is sleeping / not moving
+                                            let last_status = {
+                                                let s = state_clone.lock().unwrap();
+                                                s.device_statuses.get(&id).cloned()
+                                            };
+                                            if let Some(last) = last_status {
+                                                new_statuses.insert(id.clone(), last);
+                                            } else {
+                                                eprintln!("Failed to query battery for {}: {}", inst.default_name(), e);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            let mut state = state_clone.lock().unwrap();
+                            state.active_device_ids = active_ids.clone();
+                            state.device_statuses = new_statuses;
+
+                            // Automatically add discovered devices to config if not present
+                            let mut config_changed = false;
+                            for inst in &active_instances {
+                                let id = inst.unique_id();
+                                if !state.config.devices.iter().any(|d| d.unique_id == id) {
+                                    state.config.devices.push(crate::config::DeviceConfig {
+                                        unique_id: id,
+                                        name: inst.default_name(),
+                                        enabled: true,
+                                        threshold: 20,
+                                        low_battery_icon_path: None,
+                                    });
+                                    config_changed = true;
+                                }
+                            }
+                            if config_changed {
+                                let _ = crate::config::save_config(&state.config);
+                            }
+
+                            // Check low-battery thresholds and send alerts
+                            if state.config.enable_notifications {
+                                let devices_to_check = state.config.devices.clone();
+                                for dev_cfg in &devices_to_check {
+                                    if !dev_cfg.enabled { continue; }
+                                    if let Some(status) = state.device_statuses.get(&dev_cfg.unique_id).copied() {
+                                        if status.is_online() && status.effective_percentage() <= dev_cfg.threshold {
+                                            let notified = state.last_notified.get(&dev_cfg.unique_id).cloned().unwrap_or(false);
+                                            if !notified {
+                                                state.last_notified.insert(dev_cfg.unique_id.clone(), true);
+                                                trigger_notification(&dev_cfg.name, status.effective_percentage());
+                                            }
+                                        } else if !status.is_online() || status.effective_percentage() > dev_cfg.threshold {
+                                            state.last_notified.insert(dev_cfg.unique_id.clone(), false);
+                                        }
                                     }
                                 }
                             }
                         }
+                        did_poll = true;
                     }
 
-                    let mut state = state_clone.lock().unwrap();
-                    state.active_device_ids = active_ids.clone();
-                    state.device_statuses = new_statuses;
-
-                    // Automatically add discovered devices to config if not present
-                    let mut config_changed = false;
-                    for inst in &active_instances {
-                        let id = inst.unique_id();
-                        if !state.config.devices.iter().any(|d| d.unique_id == id) {
-                            state.config.devices.push(crate::config::DeviceConfig {
-                                unique_id: id,
-                                name: inst.default_name(),
-                                enabled: true,
-                                threshold: 20,
-                                low_battery_icon_path: None,
-                            });
-                            config_changed = true;
-                        }
-                    }
-                    if config_changed {
-                        let _ = crate::config::save_config(&state.config);
-                    }
-
-                    // Check low-battery thresholds and send alerts
-                    if state.config.enable_notifications {
-                        let devices_to_check = state.config.devices.clone();
-                        for dev_cfg in &devices_to_check {
-                            if !dev_cfg.enabled { continue; }
-                            if let Some(status) = state.device_statuses.get(&dev_cfg.unique_id).copied() {
-                                if status.is_online() && status.effective_percentage() <= dev_cfg.threshold {
-                                    let notified = state.last_notified.get(&dev_cfg.unique_id).cloned().unwrap_or(false);
-                                    if !notified {
-                                        state.last_notified.insert(dev_cfg.unique_id.clone(), true);
-                                        trigger_notification(&dev_cfg.name, status.effective_percentage());
-                                    }
-                                } else if !status.is_online() || status.effective_percentage() > dev_cfg.threshold {
-                                    state.last_notified.insert(dev_cfg.unique_id.clone(), false);
-                                }
-                            }
+                    if did_poll || is_forced_update || last_cycle.elapsed() >= std::time::Duration::from_secs(3) {
+                        last_cycle = std::time::Instant::now();
+                        if let Some(ref mut tray) = tray_icon {
+                            update_tray_icon_and_menu_local(
+                                &state_clone,
+                                tray,
+                                &settings_item,
+                                &exit_item,
+                            );
                         }
                     }
                 }
+                windows_sys::Win32::UI::WindowsAndMessaging::TranslateMessage(&msg);
+                windows_sys::Win32::UI::WindowsAndMessaging::DispatchMessageW(&msg);
             }
-
-            std::thread::sleep(std::time::Duration::from_millis(1000));
         }
     });
+
+    // Wait for background thread to initialize the tray icon
+    loop {
+        {
+            let s = shared_state.lock().unwrap();
+            if s.initialized {
+                break;
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
 
     // Run eframe Native UI Event Loop
     let native_options = eframe::NativeOptions {
@@ -557,41 +675,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "BatStat Settings",
         native_options,
         Box::new(move |cc| {
-            let tray_menu = tray_icon::menu::Menu::new();
-            let settings_item = tray_icon::menu::MenuItem::new("Settings", true, None);
-            let exit_item = tray_icon::menu::MenuItem::new("Exit", true, None);
-            let _ = tray_menu.append_items(&[&settings_item, &exit_item]);
-
-            let default_icon = load_icon_from_memory(include_bytes!("icons/ok.png"));
-            
-            let tray_icon = match TrayIconBuilder::new()
-                .with_menu(Box::new(tray_menu))
-                .with_tooltip("BatStat Battery Monitor")
-                .with_icon(default_icon)
-                .build()
-            {
-                Ok(icon) => {
-                    Some(icon)
-                }
-                Err(e) => {
-                    eprintln!("WARNING: Failed to build tray icon: {:?}. Running in window fallback mode.", e);
-                    None
-                }
-            };
-
             // Set up event handlers that queue events and wake the UI
             let pending_menu = Arc::new(Mutex::new(Vec::<MenuEvent>::new()));
             let pending_tray = Arc::new(Mutex::new(Vec::<TrayIconEvent>::new()));
 
-            let settings_id = settings_item.id().clone();
-            let exit_id = exit_item.id().clone();
-
             let menu_queue = Arc::clone(&pending_menu);
             let menu_ctx = cc.egui_ctx.clone();
+            let state_for_menu = Arc::clone(&state_clone_ui);
             MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
-                if event.id == settings_id {
+                let (settings_id, exit_id) = {
+                    let s = state_for_menu.lock().unwrap();
+                    (s.settings_item_id.clone(), s.exit_item_id.clone())
+                };
+                if Some(event.id.clone()) == settings_id {
                     show_settings_window();
-                } else if event.id == exit_id {
+                } else if Some(event.id.clone()) == exit_id {
                     std::process::exit(0);
                 }
                 menu_queue.lock().unwrap().push(event);
@@ -608,19 +706,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 tray_ctx.request_repaint();
             }));
 
-            let wakeup_ctx = cc.egui_ctx.clone();
-            std::thread::spawn(move || {
-                loop {
-                    std::thread::sleep(std::time::Duration::from_secs(3));
-                    wakeup_ctx.request_repaint();
-                }
-            });
-
             Ok(Box::new(BatStatApp::new(
                 state_clone_ui,
-                settings_item,
-                exit_item,
-                tray_icon,
                 pending_menu,
                 pending_tray,
             )))
@@ -628,3 +715,5 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     Ok(())
 }
+
+
