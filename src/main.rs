@@ -505,6 +505,50 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
+    // Keep mutex handle alive so it doesn't get dropped and released prematurely.
+    let _instance_mutex = unsafe {
+        use std::os::windows::ffi::OsStrExt;
+        let mutex_name: Vec<u16> = std::ffi::OsStr::new("Local\\BatStatSingleInstanceMutex")
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        
+        let mutex = windows_sys::Win32::System::Threading::CreateMutexW(
+            std::ptr::null(),
+            1, // InitialOwner = TRUE
+            mutex_name.as_ptr(),
+        );
+
+        if mutex.is_null() {
+            eprintln!("Failed to create single instance mutex");
+            None
+        } else {
+            let error = windows_sys::Win32::Foundation::GetLastError();
+            if error == windows_sys::Win32::Foundation::ERROR_ALREADY_EXISTS {
+                eprintln!("BatStat is already running. Showing existing instance.");
+                // Try to find the existing window
+                let title: Vec<u16> = std::ffi::OsStr::new("BatStat Settings")
+                    .encode_wide()
+                    .chain(std::iter::once(0))
+                    .collect();
+                let hwnd = windows_sys::Win32::UI::WindowsAndMessaging::FindWindowW(
+                    std::ptr::null(),
+                    title.as_ptr(),
+                );
+                if !hwnd.is_null() {
+                    windows_sys::Win32::UI::WindowsAndMessaging::ShowWindow(
+                        hwnd,
+                        windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOW,
+                    );
+                    windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow(hwnd);
+                }
+                windows_sys::Win32::Foundation::CloseHandle(mutex);
+                return Ok(());
+            }
+            Some(mutex)
+        }
+    };
+
     let config = load_config();
 
     crate::config::setup_icons_folder();
@@ -562,31 +606,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
 
-        let tray_menu = tray_icon::menu::Menu::new();
-        let settings_item = tray_icon::menu::MenuItem::new("Settings", true, None);
-        let exit_item = tray_icon::menu::MenuItem::new("Exit", true, None);
-        let _ = tray_menu.append_items(&[&settings_item, &exit_item]);
-
-        let default_icon = load_icon_from_memory(include_bytes!("icons/ok.png"));
+        let mut settings_item = tray_icon::menu::MenuItem::new("Settings", true, None);
+        let mut exit_item = tray_icon::menu::MenuItem::new("Exit", true, None);
         
-        let mut tray_icon = match TrayIconBuilder::new()
-            .with_menu(Box::new(tray_menu))
-            .with_tooltip("BatStat Battery Monitor")
-            .with_icon(default_icon)
-            .build()
-        {
-            Ok(icon) => {
-                let mut s = state_clone.lock().unwrap();
-                s.settings_item_id = Some(settings_item.id().clone());
-                s.exit_item_id = Some(exit_item.id().clone());
-                s.has_tray = true;
-                Some(icon)
+        let mut tray_icon = None;
+        for attempt in 1..=30 {
+            let tray_menu = tray_icon::menu::Menu::new();
+            settings_item = tray_icon::menu::MenuItem::new("Settings", true, None);
+            exit_item = tray_icon::menu::MenuItem::new("Exit", true, None);
+            let _ = tray_menu.append_items(&[&settings_item, &exit_item]);
+
+            let default_icon = load_icon_from_memory(include_bytes!("icons/ok.png"));
+            match TrayIconBuilder::new()
+                .with_menu(Box::new(tray_menu))
+                .with_tooltip("BatStat Battery Monitor")
+                .with_icon(default_icon)
+                .build()
+            {
+                Ok(icon) => {
+                    let mut s = state_clone.lock().unwrap();
+                    s.settings_item_id = Some(settings_item.id().clone());
+                    s.exit_item_id = Some(exit_item.id().clone());
+                    s.has_tray = true;
+                    tray_icon = Some(icon);
+                    break;
+                }
+                Err(e) => {
+                    eprintln!("WARNING: Attempt {} failed to build tray icon: {:?}.", attempt, e);
+                    if attempt < 30 {
+                        std::thread::sleep(std::time::Duration::from_secs(1));
+                    }
+                }
             }
-            Err(e) => {
-                eprintln!("WARNING: Failed to build tray icon: {:?}. Running in window fallback mode.", e);
-                None
-            }
-        };
+        }
 
         // Mark as initialized
         {
@@ -600,8 +652,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Box::new(plugins::steelseries::SteelSeriesPlugin),
         ];
 
-        let mut last_poll = std::time::Instant::now() - std::time::Duration::from_secs(3600);
-        let mut last_cycle = std::time::Instant::now() - std::time::Duration::from_secs(3600);
+        let mut last_poll = std::time::Instant::now();
+        let mut last_cycle = std::time::Instant::now();
+        let mut force_initial_poll = true;
 
         // Store the thread ID
         let tid = unsafe { windows_sys::Win32::System::Threading::GetCurrentThreadId() };
@@ -639,7 +692,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     };
 
                     let mut did_poll = false;
-                    if request_poll || last_poll.elapsed() >= std::time::Duration::from_secs(polling_interval) {
+                    if force_initial_poll || request_poll || last_poll.elapsed() >= std::time::Duration::from_secs(polling_interval) {
+                        force_initial_poll = false;
                         last_poll = std::time::Instant::now();
                         
                         if let Ok(api) = hidapi::HidApi::new() {

@@ -14,16 +14,13 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@v3
 
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Rust Cache
-        uses: swatinem/rust-cache@v2
-
       - name: Install cargo-wix
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v1
         with:
           tool: cargo-wix
 
@@ -49,7 +46,7 @@ jobs:
         run: cargo wix --no-build --nocapture
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@v1
         with:
           files: |
             target/release/batstat.exe

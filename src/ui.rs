@@ -161,7 +161,7 @@ impl eframe::App for SettingsWindow {
                     ui.painter().text(
                         badge_rect.center(),
                         egui::Align2::CENTER_CENTER,
-                        "v1.2.0",
+                        concat!("v", env!("CARGO_PKG_VERSION")),
                         egui::FontId::proportional(10.0),
                         egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)
                     );
