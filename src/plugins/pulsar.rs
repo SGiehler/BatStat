@@ -11,6 +11,43 @@ fn calculate_checksum(payload: &[u8]) -> u8 {
     (0x55_u32.wrapping_sub(sum) & 0xFF) as u8
 }
 
+fn calculate_pulsar_percentage(voltage: u16, charging: bool) -> u8 {
+    const W: [u16; 21] = [
+        3050, 3420, 3480, 3540, 3600, 3660, 3720, 3760, 3800, 3840,
+        3880, 3920, 3940, 3960, 3980, 4000, 4020, 4040, 4060, 4080,
+        4110
+    ];
+
+    let mut s: f64;
+    if voltage > W[W.len() - 1] {
+        s = if charging { 99.0 } else { 100.0 };
+    } else {
+        let mut a = None;
+        for n in 0..W.len() {
+            if voltage <= W[n] {
+                a = Some(n);
+                break;
+            }
+        }
+
+        if let Some(a_idx) = a {
+            if a_idx == 0 {
+                s = 0.0;
+            } else {
+                let interval_width = (W[a_idx] - W[a_idx - 1]) as f64 / 5.0;
+                s = ((voltage - W[a_idx - 1]) as f64) / interval_width + 5.0 * ((a_idx - 1) as f64);
+            }
+            if s == 0.0 || s == 15.0 {
+                s += 1.0;
+            }
+        } else {
+            s = 0.0;
+        }
+    }
+
+    s.round() as u8
+}
+
 pub struct PulsarPlugin;
 
 impl DevicePlugin for PulsarPlugin {
@@ -76,9 +113,31 @@ impl DeviceInstance for PulsarDeviceInstance {
             ));
         }
 
-        let percentage = buf[6];
+        let raw_percentage = buf[6];
         let charging = buf[7] != 0;
+        let voltage = ((buf[8] as u16) << 8) | (buf[9] as u16);
+
+        let percentage = if voltage > 0 {
+            calculate_pulsar_percentage(voltage, charging)
+        } else {
+            raw_percentage
+        };
 
         Ok(DeviceBatteryStatus::simple(percentage, charging, true))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_calculate_pulsar_percentage() {
+        assert_eq!(calculate_pulsar_percentage(3810, false), 41);
+        assert_eq!(calculate_pulsar_percentage(3920, false), 55);
+        assert_eq!(calculate_pulsar_percentage(4110, false), 100);
+        assert_eq!(calculate_pulsar_percentage(3050, false), 1);
+        assert_eq!(calculate_pulsar_percentage(4150, false), 100);
+        assert_eq!(calculate_pulsar_percentage(4150, true), 99);
     }
 }

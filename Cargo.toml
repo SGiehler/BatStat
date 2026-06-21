@@ -1,6 +1,6 @@
 [package]
 name = "batstat"
-version = "1.0.5"
+version = "1.0.6"
 edition = "2021"
 description = "A lightweight Windows battery monitor for peripherals in the system tray"
 authors = ["SGiehler"]

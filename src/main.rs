@@ -856,7 +856,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         viewport: egui::ViewportBuilder::default()
             .with_title("BatStat Settings")
             .with_inner_size([480.0, 700.0])
-            .with_resizable(false),
+            .with_min_inner_size([400.0, 500.0])
+            .with_resizable(true),
         ..Default::default()
     };
 
