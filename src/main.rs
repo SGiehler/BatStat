@@ -716,9 +716,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             state.request_poll = false;
                         }
                         (state.config.polling_interval_secs, req)
-                    };
-
-                    let mut did_poll = false;
+                    };                    let mut did_poll = false;
                     if force_initial_poll || request_poll || last_poll.elapsed() >= std::time::Duration::from_secs(polling_interval) {
                         force_initial_poll = false;
                         last_poll = std::time::Instant::now();
@@ -726,6 +724,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if api.is_none() {
                             api = hidapi::HidApi::new().ok();
                         }
+
+                        let mut should_reset_api = false;
 
                         if let Some(ref mut hid_api) = api {
                             let _ = hid_api.refresh_devices();
@@ -759,6 +759,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                                 new_statuses.insert(id.clone(), status);
                                             }
                                             Err(e) => {
+                                                if !id.starts_with("xbox_") {
+                                                    should_reset_api = true;
+                                                }
+
                                                 // Fallback to last known battery status if the device is sleeping / not moving
                                                 let last_status = {
                                                     let s = state_clone.lock().unwrap();
@@ -819,6 +823,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
                             }
                         }
+
+                        if should_reset_api {
+                            api = None;
+                        }
+
                         did_poll = true;
                     }
 
