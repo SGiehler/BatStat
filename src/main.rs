@@ -608,6 +608,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 tray_ctx.request_repaint();
             }));
 
+            let wakeup_ctx = cc.egui_ctx.clone();
+            std::thread::spawn(move || {
+                loop {
+                    std::thread::sleep(std::time::Duration::from_secs(3));
+                    wakeup_ctx.request_repaint();
+                }
+            });
+
             Ok(Box::new(BatStatApp::new(
                 state_clone_ui,
                 settings_item,
