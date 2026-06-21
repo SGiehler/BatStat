@@ -671,14 +671,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Box::new(plugins::logitech::LogitechPlugin),
         ];
 
-        let mut api = match hidapi::HidApi::new() {
-            Ok(a) => Some(a),
-            Err(e) => {
-                eprintln!("Failed to initialize HIDAPI: {:?}", e);
-                None
-            }
-        };
-
         let mut last_poll = std::time::Instant::now();
         let mut last_cycle = std::time::Instant::now();
         let mut force_initial_poll = true;
@@ -716,116 +708,120 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             state.request_poll = false;
                         }
                         (state.config.polling_interval_secs, req)
-                    };                    let mut did_poll = false;
+                    };
+
+                    let mut did_poll = false;
                     if force_initial_poll || request_poll || last_poll.elapsed() >= std::time::Duration::from_secs(polling_interval) {
                         force_initial_poll = false;
                         last_poll = std::time::Instant::now();
                         
-                        if api.is_none() {
-                            api = hidapi::HidApi::new().ok();
+                        let needs_hid = {
+                            let s = state_clone.lock().unwrap();
+                            s.config.devices.is_empty() 
+                                || s.config.devices.iter().any(|d| d.enabled && !d.unique_id.starts_with("xbox_"))
+                        };
+
+                        let mut active_instances = Vec::new();
+                        let mut active_ids = Vec::new();
+                        let mut new_statuses = std::collections::HashMap::new();
+
+                        // Instantiate HIDAPI if there are any active/enabled HID devices
+                        let hid_api = if needs_hid {
+                            match hidapi::HidApi::new() {
+                                Ok(api) => Some(api),
+                                Err(e) => {
+                                    eprintln!("Failed to initialize HIDAPI: {:?}", e);
+                                    None
+                                }
+                            }
+                        } else {
+                            None
+                        };
+
+                        // Scan plugins
+                        for plugin in &plugins {
+                            active_instances.extend(plugin.scan(hid_api.as_ref()));
                         }
 
-                        let mut should_reset_api = false;
-
-                        if let Some(ref mut hid_api) = api {
-                            let _ = hid_api.refresh_devices();
-                            
-                            let mut active_instances = Vec::new();
-                            for plugin in &plugins {
-                                active_instances.extend(plugin.scan(hid_api));
+                        for inst in &active_instances {
+                            let id = inst.unique_id();
+                            if !active_ids.contains(&id) {
+                                active_ids.push(id.clone());
                             }
 
-                            let mut active_ids = Vec::new();
-                            let mut new_statuses = std::collections::HashMap::new();
+                            if !new_statuses.contains_key(&id) {
+                                let is_enabled = {
+                                    let s = state_clone.lock().unwrap();
+                                    s.config.devices.iter()
+                                        .find(|d| d.unique_id == id)
+                                        .map(|d| d.enabled)
+                                        .unwrap_or(true)
+                                };
 
-                            for inst in &active_instances {
-                                let id = inst.unique_id();
-                                if !active_ids.contains(&id) {
-                                    active_ids.push(id.clone());
-                                }
-
-                                if !new_statuses.contains_key(&id) {
-                                    let is_enabled = {
-                                        let s = state_clone.lock().unwrap();
-                                        s.config.devices.iter()
-                                            .find(|d| d.unique_id == id)
-                                            .map(|d| d.enabled)
-                                            .unwrap_or(true)
-                                    };
-
-                                    if is_enabled {
-                                        match inst.query_battery(hid_api) {
-                                            Ok(status) => {
-                                                new_statuses.insert(id.clone(), status);
-                                            }
-                                            Err(e) => {
-                                                if !id.starts_with("xbox_") {
-                                                    should_reset_api = true;
-                                                }
-
-                                                // Fallback to last known battery status if the device is sleeping / not moving
-                                                let last_status = {
-                                                    let s = state_clone.lock().unwrap();
-                                                    s.device_statuses.get(&id).cloned()
-                                                };
-                                                if let Some(last) = last_status {
-                                                    new_statuses.insert(id.clone(), last);
-                                                } else {
-                                                    eprintln!("Failed to query battery for {}: {}", inst.default_name(), e);
-                                                }
+                                if is_enabled {
+                                    match inst.query_battery(hid_api.as_ref()) {
+                                        Ok(status) => {
+                                            new_statuses.insert(id.clone(), status);
+                                        }
+                                        Err(e) => {
+                                            // Fallback to last known battery status if the device is sleeping / not moving
+                                            let last_status = {
+                                                let s = state_clone.lock().unwrap();
+                                                s.device_statuses.get(&id).cloned()
+                                            };
+                                            if let Some(last) = last_status {
+                                                new_statuses.insert(id.clone(), last);
+                                            } else {
+                                                eprintln!("Failed to query battery for {}: {}", inst.default_name(), e);
                                             }
                                         }
-                                    } else {
-                                        new_statuses.insert(id.clone(), DeviceBatteryStatus::Offline);
                                     }
-                                }
-                            }
-
-                            let mut state = state_clone.lock().unwrap();
-                            state.active_device_ids = active_ids.clone();
-                            state.device_statuses = new_statuses;
-
-                            // Automatically add discovered devices to config if not present
-                            let mut config_changed = false;
-                            for inst in &active_instances {
-                                let id = inst.unique_id();
-                                if !state.config.devices.iter().any(|d| d.unique_id == id) {
-                                    state.config.devices.push(crate::config::DeviceConfig {
-                                        unique_id: id,
-                                        name: inst.default_name(),
-                                        enabled: true,
-                                        threshold: 20,
-                                        low_battery_icon_path: None,
-                                    });
-                                    config_changed = true;
-                                }
-                            }
-                            if config_changed {
-                                let _ = crate::config::save_config(&state.config);
-                            }
-
-                            // Check low-battery thresholds and send alerts
-                            if state.config.enable_notifications {
-                                let devices_to_check = state.config.devices.clone();
-                                for dev_cfg in &devices_to_check {
-                                    if !dev_cfg.enabled { continue; }
-                                    if let Some(status) = state.device_statuses.get(&dev_cfg.unique_id).copied() {
-                                        if status.is_online() && status.effective_percentage() <= dev_cfg.threshold {
-                                            let notified = state.last_notified.get(&dev_cfg.unique_id).cloned().unwrap_or(false);
-                                            if !notified {
-                                                state.last_notified.insert(dev_cfg.unique_id.clone(), true);
-                                                trigger_notification(&dev_cfg.name, status.effective_percentage());
-                                            }
-                                        } else if !status.is_online() || status.effective_percentage() > dev_cfg.threshold {
-                                            state.last_notified.insert(dev_cfg.unique_id.clone(), false);
-                                        }
-                                    }
+                                } else {
+                                    new_statuses.insert(id.clone(), DeviceBatteryStatus::Offline);
                                 }
                             }
                         }
 
-                        if should_reset_api {
-                            api = None;
+                        let mut state = state_clone.lock().unwrap();
+                        state.active_device_ids = active_ids.clone();
+                        state.device_statuses = new_statuses;
+
+                        // Automatically add discovered devices to config if not present
+                        let mut config_changed = false;
+                        for inst in &active_instances {
+                            let id = inst.unique_id();
+                            if !state.config.devices.iter().any(|d| d.unique_id == id) {
+                                state.config.devices.push(crate::config::DeviceConfig {
+                                    unique_id: id,
+                                    name: inst.default_name(),
+                                    enabled: true,
+                                    threshold: 20,
+                                    low_battery_icon_path: None,
+                                });
+                                config_changed = true;
+                            }
+                        }
+                        if config_changed {
+                            let _ = crate::config::save_config(&state.config);
+                        }
+
+                        // Check low-battery thresholds and send alerts
+                        if state.config.enable_notifications {
+                            let devices_to_check = state.config.devices.clone();
+                            for dev_cfg in &devices_to_check {
+                                if !dev_cfg.enabled { continue; }
+                                if let Some(status) = state.device_statuses.get(&dev_cfg.unique_id).copied() {
+                                    if status.is_online() && status.effective_percentage() <= dev_cfg.threshold {
+                                        let notified = state.last_notified.get(&dev_cfg.unique_id).cloned().unwrap_or(false);
+                                        if !notified {
+                                            state.last_notified.insert(dev_cfg.unique_id.clone(), true);
+                                            trigger_notification(&dev_cfg.name, status.effective_percentage());
+                                        }
+                                    } else if !status.is_online() || status.effective_percentage() > dev_cfg.threshold {
+                                        state.last_notified.insert(dev_cfg.unique_id.clone(), false);
+                                    }
+                                }
+                            }
                         }
 
                         did_poll = true;

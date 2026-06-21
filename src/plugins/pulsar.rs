@@ -51,17 +51,19 @@ fn calculate_pulsar_percentage(voltage: u16, charging: bool) -> u8 {
 pub struct PulsarPlugin;
 
 impl DevicePlugin for PulsarPlugin {
-    fn scan(&self, api: &HidApi) -> Vec<Box<dyn DeviceInstance>> {
+    fn scan(&self, api: Option<&HidApi>) -> Vec<Box<dyn DeviceInstance>> {
         let mut instances: Vec<Box<dyn DeviceInstance>> = Vec::new();
-        for dev_info in api.device_list() {
-            let vid = dev_info.vendor_id();
-            if vid == PULSAR_VENDOR_ID_1 || vid == PULSAR_VENDOR_ID_2 {
-                // Only match config/telemetry interface (usage page >= 0xFF00)
-                if dev_info.usage_page() >= 0xFF00 {
-                    instances.push(Box::new(PulsarDeviceInstance {
-                        path: dev_info.path().to_owned(),
-                        product_id: dev_info.product_id(),
-                    }));
+        if let Some(api) = api {
+            for dev_info in api.device_list() {
+                let vid = dev_info.vendor_id();
+                if vid == PULSAR_VENDOR_ID_1 || vid == PULSAR_VENDOR_ID_2 {
+                    // Only match config/telemetry interface (usage page >= 0xFF00)
+                    if dev_info.usage_page() >= 0xFF00 {
+                        instances.push(Box::new(PulsarDeviceInstance {
+                            path: dev_info.path().to_owned(),
+                            product_id: dev_info.product_id(),
+                        }));
+                    }
                 }
             }
         }
@@ -84,7 +86,8 @@ impl DeviceInstance for PulsarDeviceInstance {
         format!("Pulsar Mouse ({:#06x})", self.product_id)
     }
 
-    fn query_battery(&self, api: &HidApi) -> Result<DeviceBatteryStatus, String> {
+    fn query_battery(&self, api: Option<&HidApi>) -> Result<DeviceBatteryStatus, String> {
+        let api = api.ok_or_else(|| "HIDAPI not initialized".to_string())?;
         let device = api.open_path(&self.path)
             .map_err(|e| format!("Failed to open device path: {}", e))?;
 

@@ -9,16 +9,18 @@ const CMD_UNIFIED_BATTERY_GET_STATUS: u8 = 0x10;
 pub struct LogitechPlugin;
 
 impl DevicePlugin for LogitechPlugin {
-    fn scan(&self, api: &HidApi) -> Vec<Box<dyn DeviceInstance>> {
+    fn scan(&self, api: Option<&HidApi>) -> Vec<Box<dyn DeviceInstance>> {
         let mut instances: Vec<Box<dyn DeviceInstance>> = Vec::new();
-        for dev_info in api.device_list() {
-            if dev_info.vendor_id() == LOGITECH_VENDOR_ID {
-                // Look for the vendor interface that handles HID++ commands
-                if dev_info.usage_page() == 0xff00 && dev_info.usage() == 0x0002 {
-                    instances.push(Box::new(LogitechDeviceInstance {
-                        path: dev_info.path().to_owned(),
-                        product_id: dev_info.product_id(),
-                    }));
+        if let Some(api) = api {
+            for dev_info in api.device_list() {
+                if dev_info.vendor_id() == LOGITECH_VENDOR_ID {
+                    // Look for the vendor interface that handles HID++ commands
+                    if dev_info.usage_page() == 0xff00 && dev_info.usage() == 0x0002 {
+                        instances.push(Box::new(LogitechDeviceInstance {
+                            path: dev_info.path().to_owned(),
+                            product_id: dev_info.product_id(),
+                        }));
+                    }
                 }
             }
         }
@@ -45,7 +47,8 @@ impl DeviceInstance for LogitechDeviceInstance {
         }
     }
 
-    fn query_battery(&self, api: &HidApi) -> Result<DeviceBatteryStatus, String> {
+    fn query_battery(&self, api: Option<&HidApi>) -> Result<DeviceBatteryStatus, String> {
+        let api = api.ok_or_else(|| "HIDAPI not initialized".to_string())?;
         let device = api.open_path(&self.path)
             .map_err(|e| format!("Failed to open Logitech device path: {}", e))?;
 

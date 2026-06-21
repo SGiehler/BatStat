@@ -7,15 +7,17 @@ const GAMEBUDS_PID: u16 = 0x230a;
 pub struct SteelSeriesPlugin;
 
 impl DevicePlugin for SteelSeriesPlugin {
-    fn scan(&self, api: &HidApi) -> Vec<Box<dyn DeviceInstance>> {
+    fn scan(&self, api: Option<&HidApi>) -> Vec<Box<dyn DeviceInstance>> {
         let mut instances: Vec<Box<dyn DeviceInstance>> = Vec::new();
-        for dev_info in api.device_list() {
-            if dev_info.vendor_id() == STEELSERIES_VENDOR_ID && dev_info.product_id() == GAMEBUDS_PID {
-                if dev_info.usage_page() == 0xffc0 || dev_info.interface_number() == 3 {
-                    let path = dev_info.path().to_owned();
-                    // Return a single unified GameBuds instance
-                    instances.push(Box::new(GameBudsInstance { path }));
-                    break; // Only need one instance since it's path-independent and queries both ears
+        if let Some(api) = api {
+            for dev_info in api.device_list() {
+                if dev_info.vendor_id() == STEELSERIES_VENDOR_ID && dev_info.product_id() == GAMEBUDS_PID {
+                    if dev_info.usage_page() == 0xffc0 || dev_info.interface_number() == 3 {
+                        let path = dev_info.path().to_owned();
+                        // Return a single unified GameBuds instance
+                        instances.push(Box::new(GameBudsInstance { path }));
+                        break; // Only need one instance since it's path-independent and queries both ears
+                    }
                 }
             }
         }
@@ -78,7 +80,8 @@ impl DeviceInstance for GameBudsInstance {
         "SteelSeries Arctis GameBuds".to_string()
     }
 
-    fn query_battery(&self, api: &HidApi) -> Result<DeviceBatteryStatus, String> {
+    fn query_battery(&self, api: Option<&HidApi>) -> Result<DeviceBatteryStatus, String> {
+        let api = api.ok_or_else(|| "HIDAPI not initialized".to_string())?;
         let (left_pct, left_chg, left_on, right_pct, right_chg, right_on) = query_buds_raw(api, &self.path)?;
         
         if !left_on && !right_on {

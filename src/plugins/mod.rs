@@ -79,10 +79,10 @@ pub trait DeviceInstance: Send + Sync {
     fn default_name(&self) -> String;
     
     /// Polls the device and returns its current battery status
-    fn query_battery(&self, api: &hidapi::HidApi) -> Result<DeviceBatteryStatus, String>;
+    fn query_battery(&self, api: Option<&hidapi::HidApi>) -> Result<DeviceBatteryStatus, String>;
 }
 
 pub trait DevicePlugin {
     /// Scans the system for matching active devices and returns them as instances
-    fn scan(&self, api: &hidapi::HidApi) -> Vec<Box<dyn DeviceInstance>>;
+    fn scan(&self, api: Option<&hidapi::HidApi>) -> Vec<Box<dyn DeviceInstance>>;
 }

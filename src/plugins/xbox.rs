@@ -5,7 +5,7 @@ use windows::Gaming::Input::Gamepad;
 pub struct XboxPlugin;
 
 impl DevicePlugin for XboxPlugin {
-    fn scan(&self, _api: &HidApi) -> Vec<Box<dyn DeviceInstance>> {
+    fn scan(&self, _api: Option<&HidApi>) -> Vec<Box<dyn DeviceInstance>> {
         let mut instances: Vec<Box<dyn DeviceInstance>> = Vec::new();
         if let Ok(gamepads) = Gamepad::Gamepads() {
             if let Ok(size) = gamepads.Size() {
@@ -37,7 +37,7 @@ impl DeviceInstance for XboxDeviceInstance {
         format!("Xbox Controller (Slot {})", self.slot)
     }
 
-    fn query_battery(&self, _api: &HidApi) -> Result<DeviceBatteryStatus, String> {
+    fn query_battery(&self, _api: Option<&HidApi>) -> Result<DeviceBatteryStatus, String> {
         let report = self.gamepad.TryGetBatteryReport()
             .map_err(|e| format!("Failed to get battery report: {:?}", e))?;
         
