@@ -755,7 +755,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("BatStat Settings")
-            .with_inner_size([480.0, 540.0])
+            .with_inner_size([480.0, 700.0])
             .with_resizable(false),
         ..Default::default()
     };
