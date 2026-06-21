@@ -27,6 +27,12 @@ jobs:
         with:
           tool: cargo-wix
 
+      - name: Add WiX to PATH
+        run: echo "$env:WIX\bin" >> $env:GITHUB_PATH
+
+      - name: Verify WiX on PATH
+        run: Get-Command candle.exe
+
       - name: Run tests
         run: cargo test
 
