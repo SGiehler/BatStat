@@ -471,7 +471,7 @@ impl eframe::App for SettingsWindow {
                                             // Row 1: Type badge + Name/Status + Enabled checkbox
                                             ui.horizontal(|ui| {
                                                 // Type badge (standard letters, 100% robust rendering)
-                                                let tag = if dev.unique_id.starts_with("pulsar_") {
+                                                let tag = if dev.unique_id.starts_with("pulsar_") || dev.unique_id.starts_with("logitech_") {
                                                     "MOUSE"
                                                 } else if dev.unique_id.starts_with("xbox_") {
                                                     "GAMEPAD"
@@ -572,7 +572,7 @@ impl eframe::App for SettingsWindow {
                                                     let available_icons = crate::config::get_icon_list();
                                                     let current_selected = dev.low_battery_icon_path.as_deref().unwrap_or("Default");
                                                     
-                                                    let default_icon_name = if dev.unique_id.starts_with("pulsar_") {
+                                                    let default_icon_name = if dev.unique_id.starts_with("pulsar_") || dev.unique_id.starts_with("logitech_") {
                                                         "low_mouse.png"
                                                     } else if dev.unique_id.starts_with("xbox_") {
                                                         "low_gamepad.png"

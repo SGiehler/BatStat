@@ -56,7 +56,7 @@ fn load_icon_from_file(path: &str) -> Result<tray_icon::Icon, String> {
 }
 
 fn get_default_low_icon(dev: &crate::config::DeviceConfig) -> tray_icon::Icon {
-    if dev.unique_id.starts_with("pulsar_") {
+    if dev.unique_id.starts_with("pulsar_") || dev.unique_id.starts_with("logitech_") {
         load_icon_from_memory(include_bytes!("icons/low_mouse.png"))
     } else if dev.unique_id.starts_with("xbox_") {
         load_icon_from_memory(include_bytes!("icons/low_gamepad.png"))
@@ -668,6 +668,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Box::new(plugins::pulsar::PulsarPlugin),
             Box::new(plugins::xbox::XboxPlugin),
             Box::new(plugins::steelseries::SteelSeriesPlugin),
+            Box::new(plugins::logitech::LogitechPlugin),
         ];
 
         let mut last_poll = std::time::Instant::now();

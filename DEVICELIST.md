@@ -33,3 +33,14 @@ Below is a detailed list of the devices currently supported by BatStat, along wi
 - **Product ID**: `0x230a` (Arctis GameBuds)
 - **Supported Channels**: Dual-channel (`Left` earbud & `Right` earbud)
 - **Reported Data**: Dynamic connection detection (online/offline status per earbud), individual battery percentages, and charging states.
+
+---
+
+## 🖱️ Logitech Gaming Mice (HID++ 2.0)
+
+- **API / Protocol**: Direct HID commands (HIDAPI / HID++ 2.0 Protocol)
+- **Interface Filter**: Usage page `0xFF00`, Usage `0x0002` (custom vendor interface)
+- **Vendor ID**: `0x046d` (Logitech)
+- **Supported Channels**: Single channel (`Main`)
+- **Reported Data**: Exact battery percentage and charging state via the Unified Battery (`0x1004`) feature. Automatically falls back to last known battery state when the device is sleeping or turned off.
+

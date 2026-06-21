@@ -1,6 +1,8 @@
 pub mod pulsar;
 pub mod steelseries;
 pub mod xbox;
+pub mod logitech;
+
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
