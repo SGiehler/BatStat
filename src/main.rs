@@ -6,7 +6,7 @@ mod plugins;
 use std::sync::{Arc, Mutex};
 use eframe::egui;
 use tray_icon::{
-    menu::MenuEvent,
+    menu::{MenuEvent, Menu, MenuItem, PredefinedMenuItem},
     TrayIconBuilder,
     TrayIconEvent,
 };
@@ -61,23 +61,24 @@ fn update_tray_icon_main(
     state: &Arc<Mutex<SharedState>>,
     tray_icon: &mut tray_icon::TrayIcon,
 ) {
-    let low_devices = {
+    let (low_devices, device_statuses) = {
         let s = state.lock().unwrap();
         let mut low = Vec::new();
         for dev_cfg in &s.config.devices {
             if !dev_cfg.enabled { continue; }
             if let Some(status) = s.device_statuses.get(&dev_cfg.unique_id) {
-                if status.is_online && status.percentage <= dev_cfg.threshold {
+                if status.is_online() && status.effective_percentage() <= dev_cfg.threshold {
                     low.push(dev_cfg.clone());
                 }
             }
         }
-        low
+        (low, s.device_statuses.clone())
     };
 
     static mut CYCLE_INDEX: usize = 0;
 
     let icon = if low_devices.is_empty() {
+        let _ = tray_icon.set_tooltip(Some("BatStat Battery Monitor"));
         load_icon_from_memory(include_bytes!("icons/ok.png"))
     } else {
         unsafe {
@@ -85,6 +86,15 @@ fn update_tray_icon_main(
                 CYCLE_INDEX = 0;
             }
             let dev = &low_devices[CYCLE_INDEX];
+            
+            let pct_str = if let Some(status) = device_statuses.get(&dev.unique_id) {
+                format!("{}%", status.effective_percentage())
+            } else {
+                "Unknown".to_string()
+            };
+            let tooltip_msg = format!("Low Battery: {} ({})", dev.name, pct_str);
+            let _ = tray_icon.set_tooltip(Some(&tooltip_msg));
+
             CYCLE_INDEX = (CYCLE_INDEX + 1) % low_devices.len();
 
             if let Some(ref path_str) = dev.low_battery_icon_path {
@@ -111,6 +121,68 @@ fn update_tray_icon_main(
     };
 
     let _ = tray_icon.set_icon(Some(icon));
+}
+
+fn update_tray_menu(
+    state: &Arc<Mutex<SharedState>>,
+    tray_icon: &mut tray_icon::TrayIcon,
+    settings_item: &MenuItem,
+    exit_item: &MenuItem,
+) {
+    let s = state.lock().unwrap();
+    let new_menu = Menu::new();
+    let mut has_devices = false;
+
+    for id in &s.active_device_ids {
+        if let Some(status) = s.device_statuses.get(id) {
+            if let DeviceBatteryStatus::Online { channels } = status {
+                let active_channels: Vec<&crate::plugins::BatteryChannel> = channels.iter().flatten().collect();
+                if !active_channels.is_empty() {
+                    let dev_name = s.config.devices.iter()
+                        .find(|d| &d.unique_id == id)
+                        .map(|d| d.name.as_str())
+                        .unwrap_or(id.as_str());
+
+                    let mut chan_parts = Vec::new();
+                    for chan in active_channels {
+                        let prefix = match chan.channel_type {
+                            crate::plugins::ChannelType::Main => "",
+                            crate::plugins::ChannelType::Left => "L: ",
+                            crate::plugins::ChannelType::Right => "R: ",
+                            crate::plugins::ChannelType::Case => "Case: ",
+                        };
+                        let charging_suffix = if chan.charging { "⚡" } else { "" };
+                        chan_parts.push(format!("{}{}%{}", prefix, chan.percentage, charging_suffix));
+                    }
+
+                    let channels_str = chan_parts.join(" | ");
+                    let item_text = format!("{}: {}", dev_name, channels_str);
+                    let truncated_text = truncate_string(&item_text, 32);
+
+                    let item = MenuItem::new(truncated_text, false, None);
+                    let _ = new_menu.append(&item);
+                    has_devices = true;
+                }
+            }
+        }
+    }
+
+    if has_devices {
+        let _ = new_menu.append(&PredefinedMenuItem::separator());
+    }
+
+    let _ = new_menu.append_items(&[settings_item, exit_item]);
+    let _ = tray_icon.set_menu(Some(Box::new(new_menu)));
+}
+
+fn truncate_string(s: &str, max_len: usize) -> String {
+    if s.chars().count() > max_len {
+        let mut truncated: String = s.chars().take(max_len - 3).collect();
+        truncated.push_str("...");
+        truncated
+    } else {
+        s.to_string()
+    }
 }
 
 fn find_our_window() -> Option<windows_sys::Win32::Foundation::HWND> {
@@ -207,8 +279,10 @@ impl eframe::App for BatStatApp {
         if self.first_frame {
             self.first_frame = false;
             // Hide the window immediately if we have a tray icon
-            if self.tray_icon.is_some() {
+            if let Some(ref mut tray) = self.tray_icon {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                update_tray_icon_main(&self.state, tray);
+                update_tray_menu(&self.state, tray, &self.settings_item, &self.exit_item);
             } else {
                 // Initialize UI state immediately in fallback window mode
                 let (config, active_ids, statuses) = {
@@ -224,6 +298,7 @@ impl eframe::App for BatStatApp {
             self.last_icon_update = std::time::Instant::now();
             if let Some(ref mut tray) = self.tray_icon {
                 update_tray_icon_main(&self.state, tray);
+                update_tray_menu(&self.state, tray, &self.settings_item, &self.exit_item);
             }
         }
 
@@ -304,6 +379,10 @@ impl eframe::App for BatStatApp {
                         self.visible = false;
                         self.ui_state = None;
                         hide_settings_window();
+                        if let Some(ref mut tray) = self.tray_icon {
+                            update_tray_icon_main(&self.state, tray);
+                            update_tray_menu(&self.state, tray, &self.settings_item, &self.exit_item);
+                        }
                     }
                 }
             }
@@ -422,13 +501,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         for dev_cfg in &devices_to_check {
                             if !dev_cfg.enabled { continue; }
                             if let Some(status) = state.device_statuses.get(&dev_cfg.unique_id).copied() {
-                                if status.is_online && status.percentage <= dev_cfg.threshold {
+                                if status.is_online() && status.effective_percentage() <= dev_cfg.threshold {
                                     let notified = state.last_notified.get(&dev_cfg.unique_id).cloned().unwrap_or(false);
                                     if !notified {
                                         state.last_notified.insert(dev_cfg.unique_id.clone(), true);
-                                        trigger_notification(&dev_cfg.name, status.percentage);
+                                        trigger_notification(&dev_cfg.name, status.effective_percentage());
                                     }
-                                } else if !status.is_online || status.percentage > dev_cfg.threshold {
+                                } else if !status.is_online() || status.effective_percentage() > dev_cfg.threshold {
                                     state.last_notified.insert(dev_cfg.unique_id.clone(), false);
                                 }
                             }

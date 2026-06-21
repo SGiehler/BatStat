@@ -2,32 +2,69 @@ pub mod pulsar;
 pub mod steelseries;
 pub mod xbox;
 
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChannelType {
+    Main,
+    Left,
+    Right,
+    Case,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DeviceBatteryStatus {
+pub struct BatteryChannel {
+    pub channel_type: ChannelType,
     pub percentage: u8,
     pub charging: bool,
-    pub is_online: bool,
-    
-    pub left_percentage: Option<u8>,
-    pub right_percentage: Option<u8>,
-    pub left_charging: Option<bool>,
-    pub right_charging: Option<bool>,
-    pub left_online: Option<bool>,
-    pub right_online: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DeviceBatteryStatus {
+    Offline,
+    Online {
+        channels: [Option<BatteryChannel>; 4],
+    },
 }
 
 impl DeviceBatteryStatus {
     pub fn simple(percentage: u8, charging: bool, is_online: bool) -> Self {
-        Self {
-            percentage,
-            charging,
-            is_online,
-            left_percentage: None,
-            right_percentage: None,
-            left_charging: None,
-            right_charging: None,
-            left_online: None,
-            right_online: None,
+        if is_online {
+            Self::Online {
+                channels: [
+                    Some(BatteryChannel {
+                        channel_type: ChannelType::Main,
+                        percentage,
+                        charging,
+                    }),
+                    None,
+                    None,
+                    None,
+                ],
+            }
+        } else {
+            Self::Offline
+        }
+    }
+
+    pub fn is_online(&self) -> bool {
+        match self {
+            Self::Offline => false,
+            Self::Online { channels } => channels.iter().any(|c| c.is_some()),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn is_charging(&self) -> bool {
+        match self {
+            Self::Offline => false,
+            Self::Online { channels } => channels.iter().flatten().any(|c| c.charging),
+        }
+    }
+
+    pub fn effective_percentage(&self) -> u8 {
+        match self {
+            Self::Offline => 0,
+            Self::Online { channels } => channels.iter().flatten().map(|c| c.percentage).min().unwrap_or(0),
         }
     }
 }

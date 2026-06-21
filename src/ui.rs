@@ -1,6 +1,6 @@
 use crate::config::{AppConfig, save_config};
 use crate::autostart::set_autostart;
-use crate::plugins::DeviceBatteryStatus;
+use crate::plugins::{DeviceBatteryStatus, BatteryChannel, ChannelType};
 use eframe::egui;
 
 pub struct SettingsWindow {
@@ -404,73 +404,50 @@ impl eframe::App for SettingsWindow {
                                                 ui.vertical(|ui| {
                                                     ui.label(egui::RichText::new(&dev.name).color(egui::Color32::WHITE).font(egui::FontId::proportional(13.0)).strong());
                                                     
-                                                    if dev.unique_id == "gamebuds" {
-                                                        // Unified SteelSeries GameBuds Left/Right battery displays
+                                                    ui.horizontal(|ui| {
                                                         if let Some(status) = self.device_statuses.get(&dev.unique_id) {
-                                                            ui.horizontal(|ui| {
-                                                                // Left Bud status
-                                                                let l_on = status.left_online.unwrap_or(false);
-                                                                let l_pct = status.left_percentage.unwrap_or(0);
-                                                                let l_chg = status.left_charging.unwrap_or(false);
-                                                                
-                                                                let l_dot_color = if l_on { egui::Color32::from_rgb(0x00, 0xe6, 0x76) } else { egui::Color32::from_rgb(0x8d, 0x8d, 0x8d) };
-                                                                let (l_rect, _) = ui.allocate_exact_size(egui::vec2(6.0, 6.0), egui::Sense::hover());
-                                                                ui.painter().circle_filled(l_rect.center(), 3.0, l_dot_color);
-                                                                
-                                                                let l_text = if l_on {
-                                                                    format!("L: {}%{}", l_pct, if l_chg { " ⚡" } else { "" })
-                                                                } else {
-                                                                    "L: OFF".to_string()
-                                                                };
-                                                                ui.label(egui::RichText::new(l_text).color(l_dot_color).font(egui::FontId::proportional(10.0)).strong());
-                                                                
-                                                                ui.add_space(6.0);
-                                                                ui.label(egui::RichText::new("|").color(egui::Color32::from_rgb(0x39, 0x39, 0x52)));
-                                                                ui.add_space(6.0);
-                                                                
-                                                                // Right Bud status
-                                                                let r_on = status.right_online.unwrap_or(false);
-                                                                let r_pct = status.right_percentage.unwrap_or(0);
-                                                                let r_chg = status.right_charging.unwrap_or(false);
-                                                                
-                                                                let r_dot_color = if r_on { egui::Color32::from_rgb(0x00, 0xe6, 0x76) } else { egui::Color32::from_rgb(0x8d, 0x8d, 0x8d) };
-                                                                let (r_rect, _) = ui.allocate_exact_size(egui::vec2(6.0, 6.0), egui::Sense::hover());
-                                                                ui.painter().circle_filled(r_rect.center(), 3.0, r_dot_color);
-                                                                
-                                                                let r_text = if r_on {
-                                                                    format!("R: {}%{}", r_pct, if r_chg { " ⚡" } else { "" })
-                                                                } else {
-                                                                    "R: OFF".to_string()
-                                                                };
-                                                                ui.label(egui::RichText::new(r_text).color(r_dot_color).font(egui::FontId::proportional(10.0)).strong());
-                                                            });
+                                                            match status {
+                                                                DeviceBatteryStatus::Online { channels } => {
+                                                                    let active_channels: Vec<&BatteryChannel> = channels.iter().flatten().collect();
+                                                                    if active_channels.is_empty() {
+                                                                        let dot_color = egui::Color32::from_rgb(0x8d, 0x8d, 0x8d);
+                                                                        let (rect, _) = ui.allocate_exact_size(egui::vec2(6.0, 6.0), egui::Sense::hover());
+                                                                        ui.painter().circle_filled(rect.center(), 3.0, dot_color);
+                                                                        ui.label(egui::RichText::new("DISCONNECTED").color(dot_color).font(egui::FontId::proportional(10.0)).strong());
+                                                                    } else {
+                                                                        let dot_color = egui::Color32::from_rgb(0x00, 0xe6, 0x76);
+                                                                        let (rect, _) = ui.allocate_exact_size(egui::vec2(6.0, 6.0), egui::Sense::hover());
+                                                                        ui.painter().circle_filled(rect.center(), 3.0, dot_color);
+                                                                        
+                                                                        for (c_idx, chan) in active_channels.iter().enumerate() {
+                                                                            if c_idx > 0 {
+                                                                                ui.label(egui::RichText::new("|").color(egui::Color32::from_rgb(0x39, 0x39, 0x52)));
+                                                                            }
+                                                                            let prefix = match chan.channel_type {
+                                                                                ChannelType::Main => "",
+                                                                                ChannelType::Left => "L: ",
+                                                                                ChannelType::Right => "R: ",
+                                                                                ChannelType::Case => "Case: ",
+                                                                            };
+                                                                            let chan_str = format!("{}{}%{}", prefix, chan.percentage, if chan.charging { " ⚡" } else { "" });
+                                                                            ui.label(egui::RichText::new(chan_str).color(dot_color).font(egui::FontId::proportional(10.0)).strong());
+                                                                        }
+                                                                    }
+                                                                }
+                                                                DeviceBatteryStatus::Offline => {
+                                                                    let dot_color = egui::Color32::from_rgb(0x8d, 0x8d, 0x8d);
+                                                                    let (rect, _) = ui.allocate_exact_size(egui::vec2(6.0, 6.0), egui::Sense::hover());
+                                                                    ui.painter().circle_filled(rect.center(), 3.0, dot_color);
+                                                                    ui.label(egui::RichText::new("DISCONNECTED").color(dot_color).font(egui::FontId::proportional(10.0)).strong());
+                                                                }
+                                                            }
                                                         } else {
-                                                            ui.horizontal(|ui| {
-                                                                let dot_color = egui::Color32::from_rgb(0x8d, 0x8d, 0x8d);
-                                                                let (rect, _) = ui.allocate_exact_size(egui::vec2(6.0, 6.0), egui::Sense::hover());
-                                                                ui.painter().circle_filled(rect.center(), 3.0, dot_color);
-                                                                ui.label(egui::RichText::new("DISCONNECTED").color(dot_color).font(egui::FontId::proportional(10.0)).strong());
-                                                            });
-                                                        }
-                                                    } else {
-                                                        // Standard Device battery display
-                                                        ui.horizontal(|ui| {
-                                                            let dot_color = if is_active { egui::Color32::from_rgb(0x00, 0xe6, 0x76) } else { egui::Color32::from_rgb(0x8d, 0x8d, 0x8d) };
+                                                            let dot_color = egui::Color32::from_rgb(0x8d, 0x8d, 0x8d);
                                                             let (rect, _) = ui.allocate_exact_size(egui::vec2(6.0, 6.0), egui::Sense::hover());
                                                             ui.painter().circle_filled(rect.center(), 3.0, dot_color);
-                                                            
-                                                            let status_str = if is_active {
-                                                                if let Some(status) = self.device_statuses.get(&dev.unique_id) {
-                                                                    format!("{}%{}", status.percentage, if status.charging { " ⚡" } else { "" })
-                                                                } else {
-                                                                    "ONLINE".to_string()
-                                                                }
-                                                            } else {
-                                                                "DISCONNECTED".to_string()
-                                                            };
-                                                            ui.label(egui::RichText::new(status_str).color(dot_color).font(egui::FontId::proportional(10.0)).strong());
-                                                        });
-                                                    }
+                                                            ui.label(egui::RichText::new("DISCONNECTED").color(dot_color).font(egui::FontId::proportional(10.0)).strong());
+                                                        }
+                                                    });
                                                 });
                                                 
                                                 // Enabled toggle

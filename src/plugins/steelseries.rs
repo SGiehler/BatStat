@@ -1,4 +1,4 @@
-use crate::plugins::{DeviceBatteryStatus, DeviceInstance, DevicePlugin};
+use crate::plugins::{DeviceBatteryStatus, DeviceInstance, DevicePlugin, BatteryChannel, ChannelType};
 use hidapi::HidApi;
 
 const STEELSERIES_VENDOR_ID: u16 = 0x1038;
@@ -81,29 +81,30 @@ impl DeviceInstance for GameBudsInstance {
     fn query_battery(&self, api: &HidApi) -> Result<DeviceBatteryStatus, String> {
         let (left_pct, left_chg, left_on, right_pct, right_chg, right_on) = query_buds_raw(api, &self.path)?;
         
-        let is_online = left_on || right_on;
-        
-        // Use the minimum of left and right percentages if both are online,
-        // so that if either falls below the threshold, a low battery alert is triggered.
-        let percentage = match (left_on, right_on) {
-            (true, true) => left_pct.min(right_pct),
-            (true, false) => left_pct,
-            (false, true) => right_pct,
-            (false, false) => 0,
-        };
-        
-        let charging = left_chg || right_chg;
+        if !left_on && !right_on {
+            return Ok(DeviceBatteryStatus::Offline);
+        }
 
-        Ok(DeviceBatteryStatus {
-            percentage,
-            charging,
-            is_online,
-            left_percentage: Some(left_pct),
-            right_percentage: Some(right_pct),
-            left_charging: Some(left_chg),
-            right_charging: Some(right_chg),
-            left_online: Some(left_on),
-            right_online: Some(right_on),
-        })
+        let mut channels = [None; 4];
+        let mut idx = 0;
+        
+        if left_on {
+            channels[idx] = Some(BatteryChannel {
+                channel_type: ChannelType::Left,
+                percentage: left_pct,
+                charging: left_chg,
+            });
+            idx += 1;
+        }
+        
+        if right_on {
+            channels[idx] = Some(BatteryChannel {
+                channel_type: ChannelType::Right,
+                percentage: right_pct,
+                charging: right_chg,
+            });
+        }
+
+        Ok(DeviceBatteryStatus::Online { channels })
     }
 }
