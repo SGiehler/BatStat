@@ -671,6 +671,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Box::new(plugins::logitech::LogitechPlugin),
         ];
 
+        let mut api = match hidapi::HidApi::new() {
+            Ok(a) => Some(a),
+            Err(e) => {
+                eprintln!("Failed to initialize HIDAPI: {:?}", e);
+                None
+            }
+        };
+
         let mut last_poll = std::time::Instant::now();
         let mut last_cycle = std::time::Instant::now();
         let mut force_initial_poll = true;
@@ -715,10 +723,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         force_initial_poll = false;
                         last_poll = std::time::Instant::now();
                         
-                        if let Ok(api) = hidapi::HidApi::new() {
+                        if api.is_none() {
+                            api = hidapi::HidApi::new().ok();
+                        }
+
+                        if let Some(ref mut hid_api) = api {
+                            let _ = hid_api.refresh_devices();
+                            
                             let mut active_instances = Vec::new();
                             for plugin in &plugins {
-                                active_instances.extend(plugin.scan(&api));
+                                active_instances.extend(plugin.scan(hid_api));
                             }
 
                             let mut active_ids = Vec::new();
@@ -731,22 +745,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 }
 
                                 if !new_statuses.contains_key(&id) {
-                                    match inst.query_battery(&api) {
-                                        Ok(status) => {
-                                            new_statuses.insert(id.clone(), status);
-                                        }
-                                        Err(e) => {
-                                            // Fallback to last known battery status if the device is sleeping / not moving
-                                            let last_status = {
-                                                let s = state_clone.lock().unwrap();
-                                                s.device_statuses.get(&id).cloned()
-                                            };
-                                            if let Some(last) = last_status {
-                                                new_statuses.insert(id.clone(), last);
-                                            } else {
-                                                eprintln!("Failed to query battery for {}: {}", inst.default_name(), e);
+                                    let is_enabled = {
+                                        let s = state_clone.lock().unwrap();
+                                        s.config.devices.iter()
+                                            .find(|d| d.unique_id == id)
+                                            .map(|d| d.enabled)
+                                            .unwrap_or(true)
+                                    };
+
+                                    if is_enabled {
+                                        match inst.query_battery(hid_api) {
+                                            Ok(status) => {
+                                                new_statuses.insert(id.clone(), status);
+                                            }
+                                            Err(e) => {
+                                                // Fallback to last known battery status if the device is sleeping / not moving
+                                                let last_status = {
+                                                    let s = state_clone.lock().unwrap();
+                                                    s.device_statuses.get(&id).cloned()
+                                                };
+                                                if let Some(last) = last_status {
+                                                    new_statuses.insert(id.clone(), last);
+                                                } else {
+                                                    eprintln!("Failed to query battery for {}: {}", inst.default_name(), e);
+                                                }
                                             }
                                         }
+                                    } else {
+                                        new_statuses.insert(id.clone(), DeviceBatteryStatus::Offline);
                                     }
                                 }
                             }
