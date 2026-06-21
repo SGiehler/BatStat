@@ -11,6 +11,9 @@ pub struct SettingsWindow {
     pub request_poll: bool,
     pub device_removed: bool,
     pub icon_textures: std::collections::HashMap<String, egui::TextureHandle>,
+    pub update_status: crate::UpdateStatus,
+    pub request_update_check: bool,
+    pub request_download_install: Option<String>,
 }
 
 impl SettingsWindow {
@@ -28,6 +31,9 @@ impl SettingsWindow {
             request_poll: false,
             device_removed: false,
             icon_textures: std::collections::HashMap::new(),
+            update_status: crate::UpdateStatus::Idle,
+            request_update_check: false,
+            request_download_install: None,
         }
     }
 }
@@ -160,11 +166,7 @@ impl eframe::App for SettingsWindow {
                         egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)
                     );
                     
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(egui::RichText::new("⚙").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(16.0)));
-                        ui.add_space(10.0);
-                        ui.label(egui::RichText::new("❓").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(16.0)));
-                    });
+                    // No trailing header icons (settings cog and question mark are obsolete)
                 });
             });
 
@@ -326,6 +328,98 @@ impl eframe::App for SettingsWindow {
                                                 if ui.add(btn).clicked() {
                                                     if let Some(dir) = crate::config::get_icons_dir_path() {
                                                         let _ = std::process::Command::new("explorer").arg(dir).spawn();
+                                                    }
+                                                }
+                                            });
+                                        });
+
+                                        ui.add_space(10.0);
+                                        ui.separator();
+                                        ui.add_space(10.0);
+
+                                        // Software Updates Section
+                                        ui.horizontal(|ui| {
+                                            ui.vertical(|ui| {
+                                                ui.label(egui::RichText::new("Software Updates").color(egui::Color32::WHITE).font(egui::FontId::proportional(13.0)));
+                                                
+                                                match &self.update_status {
+                                                    crate::UpdateStatus::Idle => {
+                                                        ui.label(egui::RichText::new(format!("Current version: v{}", env!("CARGO_PKG_VERSION"))).color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)).italics());
+                                                    }
+                                                    crate::UpdateStatus::Checking => {
+                                                        ui.label(egui::RichText::new("Checking for updates...").color(egui::Color32::from_rgb(0x4c, 0xc9, 0xf0)).font(egui::FontId::proportional(9.0)).italics());
+                                                    }
+                                                    crate::UpdateStatus::Available(info) => {
+                                                        ui.label(egui::RichText::new(format!("Update available: {}", info.tag_name)).color(egui::Color32::from_rgb(0x00, 0xe6, 0x76)).font(egui::FontId::proportional(9.0)).strong());
+                                                    }
+                                                    crate::UpdateStatus::NoUpdate => {
+                                                        ui.label(egui::RichText::new("You are running the latest version.").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)).italics());
+                                                    }
+                                                    crate::UpdateStatus::Downloading(progress) => {
+                                                        ui.label(egui::RichText::new(format!("Downloading update: {:.0}%", progress * 100.0)).color(egui::Color32::from_rgb(0x4c, 0xc9, 0xf0)).font(egui::FontId::proportional(9.0)).strong());
+                                                    }
+                                                    crate::UpdateStatus::ReadyToInstall(_) => {
+                                                        ui.label(egui::RichText::new("Ready to install.").color(egui::Color32::from_rgb(0x00, 0xe6, 0x76)).font(egui::FontId::proportional(9.0)).strong());
+                                                    }
+                                                    crate::UpdateStatus::Error(e) => {
+                                                        ui.label(egui::RichText::new(format!("Error: {}", e)).color(egui::Color32::from_rgb(0xda, 0x1e, 0x28)).font(egui::FontId::proportional(9.0)).italics());
+                                                    }
+                                                }
+                                            });
+                                            
+                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                match &self.update_status {
+                                                    crate::UpdateStatus::Available(info) => {
+                                                        let msi_asset = info.assets.iter().find(|a| a.name.ends_with(".msi"));
+                                                        if let Some(asset) = msi_asset {
+                                                            let btn = egui::Button::new(
+                                                                egui::RichText::new("💾 Update Now")
+                                                                    .color(egui::Color32::from_rgb(0x16, 0x16, 0x16))
+                                                                    .font(egui::FontId::proportional(11.0))
+                                                                    .strong()
+                                                            ).fill(egui::Color32::from_rgb(0x00, 0xe6, 0x76)).rounding(4.0);
+                                                            
+                                                            if ui.add(btn).clicked() {
+                                                                self.request_download_install = Some(asset.browser_download_url.clone());
+                                                            }
+                                                        } else {
+                                                            let btn = egui::Button::new(
+                                                                egui::RichText::new("🌐 View Releases")
+                                                                    .color(egui::Color32::WHITE)
+                                                                    .font(egui::FontId::proportional(11.0))
+                                                                    .strong()
+                                                            ).fill(egui::Color32::from_rgb(0x2c, 0x2c, 0x4d)).rounding(4.0);
+                                                            
+                                                            if ui.add(btn).clicked() {
+                                                                let _ = std::process::Command::new("explorer").arg("https://github.com/SGiehler/BatStat/releases").spawn();
+                                                            }
+                                                        }
+                                                    }
+                                                    crate::UpdateStatus::Downloading(_) => {
+                                                        let _ = ui.add_enabled(false, egui::Button::new(
+                                                            egui::RichText::new("⏳ Downloading...")
+                                                                .font(egui::FontId::proportional(11.0))
+                                                                .strong()
+                                                        ).rounding(4.0));
+                                                    }
+                                                    crate::UpdateStatus::Checking => {
+                                                        let _ = ui.add_enabled(false, egui::Button::new(
+                                                            egui::RichText::new("🔄 Checking...")
+                                                                .font(egui::FontId::proportional(11.0))
+                                                                .strong()
+                                                        ).rounding(4.0));
+                                                    }
+                                                    _ => {
+                                                        let btn = egui::Button::new(
+                                                            egui::RichText::new("🔄 Check Updates")
+                                                                .color(egui::Color32::WHITE)
+                                                                .font(egui::FontId::proportional(11.0))
+                                                                .strong()
+                                                        ).fill(egui::Color32::from_rgb(0x2c, 0x2c, 0x4d)).rounding(4.0);
+                                                        
+                                                        if ui.add(btn).clicked() {
+                                                            self.request_update_check = true;
+                                                        }
                                                     }
                                                 }
                                             });

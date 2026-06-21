@@ -2,6 +2,7 @@ mod config;
 mod ui;
 mod autostart;
 mod plugins;
+mod updater;
 
 use std::sync::{Arc, Mutex};
 use eframe::egui;
@@ -12,6 +13,17 @@ use tray_icon::{
 };
 use crate::config::load_config;
 use crate::plugins::{DeviceBatteryStatus, DevicePlugin};
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum UpdateStatus {
+    Idle,
+    Checking,
+    Available(crate::updater::ReleaseInfo),
+    NoUpdate,
+    Downloading(f32),
+    ReadyToInstall(String),
+    Error(String),
+}
 
 struct SharedState {
     config: crate::config::AppConfig,
@@ -24,6 +36,7 @@ struct SharedState {
     has_tray: bool,
     tray_thread_id: Option<u32>,
     initialized: bool,
+    update_status: UpdateStatus,
 }
 
 fn load_icon_from_memory(bytes: &[u8]) -> tray_icon::Icon {
@@ -378,6 +391,54 @@ impl eframe::App for BatStatApp {
                     
                     ui_state.active_devices = s.active_device_ids.clone();
                     ui_state.device_statuses = s.device_statuses.clone();
+                    ui_state.update_status = s.update_status.clone();
+                    
+                    if ui_state.request_update_check {
+                        ui_state.request_update_check = false;
+                        s.update_status = UpdateStatus::Checking;
+                        
+                        let state_for_check = Arc::clone(&self.state);
+                        std::thread::spawn(move || {
+                            match crate::updater::check_for_update() {
+                                Ok(Some(info)) => {
+                                    if let Ok(mut s) = state_for_check.lock() {
+                                        s.update_status = UpdateStatus::Available(info);
+                                    }
+                                }
+                                Ok(None) => {
+                                    if let Ok(mut s) = state_for_check.lock() {
+                                        s.update_status = UpdateStatus::NoUpdate;
+                                    }
+                                }
+                                Err(e) => {
+                                    if let Ok(mut s) = state_for_check.lock() {
+                                        s.update_status = UpdateStatus::Error(e);
+                                    }
+                                }
+                            }
+                        });
+                    }
+                    
+                    if let Some(ref download_url) = ui_state.request_download_install {
+                        let download_url = download_url.clone();
+                        ui_state.request_download_install = None;
+                        s.update_status = UpdateStatus::Downloading(0.0);
+                        
+                        let state_for_download = Arc::clone(&self.state);
+                        std::thread::spawn(move || {
+                            let state_cb = Arc::clone(&state_for_download);
+                            let progress_cb = move |progress| {
+                                if let Ok(mut s) = state_cb.lock() {
+                                    s.update_status = UpdateStatus::Downloading(progress);
+                                }
+                            };
+                            if let Err(e) = crate::updater::download_and_install_update(&download_url, progress_cb) {
+                                if let Ok(mut s) = state_for_download.lock() {
+                                    s.update_status = UpdateStatus::Error(e);
+                                }
+                            }
+                        });
+                    }
                     
                     // Merge newly discovered devices into UI config
                     for dev in &s.config.devices {
@@ -458,7 +519,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         has_tray: false,
         tray_thread_id: None,
         initialized: false,
+        update_status: UpdateStatus::Idle,
     }));
+
+    // Spawn background thread to check for updates on startup
+    {
+        let state_for_check = Arc::clone(&shared_state);
+        std::thread::spawn(move || {
+            {
+                if let Ok(mut s) = state_for_check.lock() {
+                    s.update_status = UpdateStatus::Checking;
+                }
+            }
+            match crate::updater::check_for_update() {
+                Ok(Some(info)) => {
+                    if let Ok(mut s) = state_for_check.lock() {
+                        s.update_status = UpdateStatus::Available(info);
+                    }
+                }
+                Ok(None) => {
+                    if let Ok(mut s) = state_for_check.lock() {
+                        s.update_status = UpdateStatus::NoUpdate;
+                    }
+                }
+                Err(e) => {
+                    if let Ok(mut s) = state_for_check.lock() {
+                        s.update_status = UpdateStatus::Error(e);
+                    }
+                }
+            }
+        });
+    }
 
     // Spawn background dedicated Tray + Polling thread
     let state_clone = Arc::clone(&shared_state);

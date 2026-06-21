@@ -2,8 +2,13 @@
 name = "batstat"
 version = "0.1.0"
 edition = "2021"
+description = "A lightweight Windows battery monitor for peripherals in the system tray"
+license = "MIT"
+repository = "https://github.com/SGiehler/BatStat"
+homepage = "https://github.com/SGiehler/BatStat"
 
 [dependencies]
+ureq = { version = "2.9", features = ["json"] }
 hidapi = "2.6.3"
 windows-sys = { version = "0.59.0", features = [
     "Win32_UI_Input_XboxController",
