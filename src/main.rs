@@ -333,6 +333,24 @@ impl eframe::App for BatStatApp {
             }
         }
 
+        if !self.visible {
+            if let Some(hwnd) = find_our_window() {
+                let is_visible = unsafe {
+                    windows_sys::Win32::UI::WindowsAndMessaging::IsWindowVisible(hwnd) != 0
+                };
+                if is_visible {
+                    self.visible = true;
+                    let (config, active_ids, statuses) = {
+                        let s = self.state.lock().unwrap();
+                        (s.config.clone(), s.active_device_ids.clone(), s.device_statuses.clone())
+                    };
+                    self.ui_state = Some(crate::ui::SettingsWindow::new(config, active_ids, statuses));
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                }
+            }
+        }
+
         // Process queued menu events
         let menu_events: Vec<MenuEvent> = {
             let mut queue = self.pending_menu_events.lock().unwrap();
