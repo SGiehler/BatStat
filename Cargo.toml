@@ -3,6 +3,7 @@ name = "batstat"
 version = "1.0.0"
 edition = "2021"
 description = "A lightweight Windows battery monitor for peripherals in the system tray"
+authors = ["SGiehler"]
 license = "MIT"
 repository = "https://github.com/SGiehler/BatStat"
 homepage = "https://github.com/SGiehler/BatStat"

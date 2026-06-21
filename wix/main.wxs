@@ -36,7 +36,7 @@
                     </Component>
 
                     <Component Id='Executable' Guid='*'>
-                        <File Id='ExecutableFile' Name='batstat.exe' Source='target\release\batstat.exe' KeyPath='yes'/>
+                        <File Id='ExecutableFile' Name='batstat.exe' Source='$(var.CargoTargetBinDir)\batstat.exe' KeyPath='yes'/>
                     </Component>
                 </Directory>
             </Directory>
@@ -50,7 +50,7 @@
                     Id='DesktopShortcut'
                     Name='BatStat'
                     Description='BatStat Battery Monitor'
-                    Target='[APPLICATIONFOLDER]batstat.exe'
+                    Target='[#ExecutableFile]'
                     WorkingDirectory='APPLICATIONFOLDER'
                 />
                 <RegistryValue
