@@ -40,6 +40,22 @@ struct SharedState {
     update_status: UpdateStatus,
 }
 
+pub fn log_to_file(msg: &str) {
+    if let Some(mut path) = crate::config::get_config_path() {
+        path.pop(); // Remove "config.toml"
+        path.push("debug.log");
+        let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string();
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
+            use std::io::Write;
+            let _ = writeln!(file, "[{}] {}", now, msg);
+        }
+    }
+}
+
 fn load_icon_from_memory(bytes: &[u8]) -> tray_icon::Icon {
     let image = image::load_from_memory(bytes).unwrap().into_rgba8();
     let (width, height) = image.dimensions();
@@ -715,11 +731,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         force_initial_poll = false;
                         last_poll = std::time::Instant::now();
                         
+                        log_to_file(&format!("--- Poll cycle started (interval: {}s, forced/requested: {}) ---", polling_interval, request_poll));
+                        
                         let needs_hid = {
                             let s = state_clone.lock().unwrap();
                             s.config.devices.is_empty() 
                                 || s.config.devices.iter().any(|d| d.enabled && !d.unique_id.starts_with("xbox_"))
                         };
+                        log_to_file(&format!("Needs HIDAPI initialization: {}", needs_hid));
 
                         let mut active_instances = Vec::new();
                         let mut active_ids = Vec::new();
@@ -728,13 +747,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         // Instantiate HIDAPI if there are any active/enabled HID devices
                         let hid_api = if needs_hid {
                             match hidapi::HidApi::new() {
-                                Ok(api) => Some(api),
+                                Ok(api) => {
+                                    log_to_file("Successfully initialized HIDAPI");
+                                    Some(api)
+                                }
                                 Err(e) => {
+                                    log_to_file(&format!("Failed to initialize HIDAPI: {:?}", e));
                                     eprintln!("Failed to initialize HIDAPI: {:?}", e);
                                     None
                                 }
                             }
                         } else {
+                            log_to_file("Skipping HIDAPI initialization");
                             None
                         };
 
@@ -742,6 +766,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         for plugin in &plugins {
                             active_instances.extend(plugin.scan(hid_api.as_ref()));
                         }
+                        log_to_file(&format!("Scanned {} active device instances", active_instances.len()));
 
                         for inst in &active_instances {
                             let id = inst.unique_id();
@@ -758,25 +783,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         .unwrap_or(true)
                                 };
 
+                                log_to_file(&format!("Device: {} (id: {}), enabled: {}", inst.default_name(), id, is_enabled));
+
                                 if is_enabled {
                                     match inst.query_battery(hid_api.as_ref()) {
                                         Ok(status) => {
+                                            log_to_file(&format!("Successfully queried battery for {}: {:?}", id, status));
                                             new_statuses.insert(id.clone(), status);
                                         }
                                         Err(e) => {
+                                            log_to_file(&format!("Error querying battery for {}: {}", id, e));
                                             // Fallback to last known battery status if the device is sleeping / not moving
                                             let last_status = {
                                                 let s = state_clone.lock().unwrap();
                                                 s.device_statuses.get(&id).cloned()
                                             };
                                             if let Some(last) = last_status {
+                                                log_to_file(&format!("Falling back to last status for {}: {:?}", id, last));
                                                 new_statuses.insert(id.clone(), last);
                                             } else {
+                                                log_to_file(&format!("No fallback status found for {}", id));
                                                 eprintln!("Failed to query battery for {}: {}", inst.default_name(), e);
                                             }
                                         }
                                     }
                                 } else {
+                                    log_to_file(&format!("Skipping battery query for disabled device {}", id));
                                     new_statuses.insert(id.clone(), DeviceBatteryStatus::Offline);
                                 }
                             }
@@ -785,6 +817,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let mut state = state_clone.lock().unwrap();
                         state.active_device_ids = active_ids.clone();
                         state.device_statuses = new_statuses;
+                        
+                        log_to_file(&format!("Poll cycle finished. Active devices: {:?}", state.active_device_ids));
 
                         // Automatically add discovered devices to config if not present
                         let mut config_changed = false;
@@ -792,12 +826,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             let id = inst.unique_id();
                             if !state.config.devices.iter().any(|d| d.unique_id == id) {
                                 state.config.devices.push(crate::config::DeviceConfig {
-                                    unique_id: id,
+                                    unique_id: id.clone(),
                                     name: inst.default_name(),
                                     enabled: true,
                                     threshold: 20,
                                     low_battery_icon_path: None,
                                 });
+                                log_to_file(&format!("Auto-added discovered device {} to config", id));
                                 config_changed = true;
                             }
                         }

@@ -1,6 +1,6 @@
 [package]
 name = "batstat"
-version = "1.0.9"
+version = "1.1.0"
 edition = "2021"
 description = "A lightweight Windows battery monitor for peripherals in the system tray"
 authors = ["SGiehler"]
@@ -23,6 +23,7 @@ windows-sys = { version = "0.59.0", features = [
 ] }
 eframe = "0.29.1"
 tray-icon = "0.19"
+chrono = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
 notify-rust = "4.11"

@@ -88,8 +88,12 @@ impl DeviceInstance for PulsarDeviceInstance {
 
     fn query_battery(&self, api: Option<&HidApi>) -> Result<DeviceBatteryStatus, String> {
         let api = api.ok_or_else(|| "HIDAPI not initialized".to_string())?;
+        crate::log_to_file(&format!("Pulsar: Attempting to open path {:?}", self.path));
         let device = api.open_path(&self.path)
-            .map_err(|e| format!("Failed to open device path: {}", e))?;
+            .map_err(|e| {
+                crate::log_to_file(&format!("Pulsar: Failed to open path: {}", e));
+                format!("Failed to open device path: {}", e)
+            })?;
 
         let mut payload = [0u8; 17];
         payload[0] = REPORT_ID;
@@ -98,23 +102,47 @@ impl DeviceInstance for PulsarDeviceInstance {
         let checksum = calculate_checksum(&payload[0..16]);
         payload[16] = checksum;
 
+        crate::log_to_file("Pulsar: Writing battery query payload");
         device.write(&payload)
-            .map_err(|e| format!("HID write failed: {}", e))?;
+            .map_err(|e| {
+                crate::log_to_file(&format!("Pulsar: HID write failed: {}", e));
+                format!("HID write failed: {}", e)
+            })?;
 
         let mut buf = [0u8; 64];
+        crate::log_to_file("Pulsar: Waiting for first report (timeout 1500ms)");
         let mut bytes_read = device.read_timeout(&mut buf, 1500)
-            .map_err(|e| format!("HID read timeout: {}", e))?;
+            .map_err(|e| {
+                crate::log_to_file(&format!("Pulsar: First read timed out or failed: {}", e));
+                format!("HID read timeout: {}", e)
+            })?;
 
         let mut attempts = 0;
         loop {
+            crate::log_to_file(&format!(
+                "Pulsar: Read attempt {} returned {} bytes. buf[0..4]: {:?}",
+                attempts,
+                bytes_read,
+                if bytes_read >= 4 { Some(&buf[0..4]) } else { None }
+            ));
+
             if bytes_read >= 17 && buf[0] == REPORT_ID && buf[1] == CMD_POWER {
                 let raw_percentage = buf[6];
                 let charging = buf[7] != 0;
                 let voltage = ((buf[8] as u16) << 8) | (buf[9] as u16);
 
                 let percentage = if voltage > 0 {
-                    calculate_pulsar_percentage(voltage, charging)
+                    let pct = calculate_pulsar_percentage(voltage, charging);
+                    crate::log_to_file(&format!(
+                        "Pulsar: Decoded power report: raw_pct={}, charging={}, voltage={}mV -> calculated_pct={}%",
+                        raw_percentage, charging, voltage, pct
+                    ));
+                    pct
                 } else {
+                    crate::log_to_file(&format!(
+                        "Pulsar: Decoded power report (no voltage): raw_pct={}, charging={} -> pct={}%",
+                        raw_percentage, charging, raw_percentage
+                    ));
                     raw_percentage
                 };
 
@@ -123,14 +151,19 @@ impl DeviceInstance for PulsarDeviceInstance {
 
             attempts += 1;
             if attempts > 50 {
+                crate::log_to_file("Pulsar: Exceeded 50 read attempts, failing query");
                 return Err("Failed to find power report after 50 reads".to_string());
             }
 
             bytes_read = match device.read_timeout(&mut buf, 10) {
                 Ok(bytes) => bytes,
-                Err(e) => return Err(format!("HID read error during drain: {}", e)),
+                Err(e) => {
+                    crate::log_to_file(&format!("Pulsar: Error draining HID buffer: {}", e));
+                    return Err(format!("HID read error during drain: {}", e));
+                }
             };
             if bytes_read == 0 {
+                crate::log_to_file("Pulsar: HID buffer drained, power report not found");
                 return Err("Power report not found in HID buffer".to_string());
             }
         }
