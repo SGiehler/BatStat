@@ -793,23 +793,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                         }
                                         Err(e) => {
                                             log_to_file(&format!("Error querying battery for {}: {}", id, e));
-                                            // Fallback to last known battery status if the device is sleeping / not moving
-                                            let last_status = {
-                                                let s = state_clone.lock().unwrap();
-                                                s.device_statuses.get(&id).cloned()
-                                            };
-                                            if let Some(last) = last_status {
-                                                log_to_file(&format!("Falling back to last status for {}: {:?}", id, last));
-                                                new_statuses.insert(id.clone(), last);
-                                            } else {
-                                                log_to_file(&format!("No fallback status found for {}", id));
-                                                eprintln!("Failed to query battery for {}: {}", inst.default_name(), e);
-                                            }
                                         }
                                     }
                                 } else {
                                     log_to_file(&format!("Skipping battery query for disabled device {}", id));
                                     new_statuses.insert(id.clone(), DeviceBatteryStatus::Offline);
+                                }
+                            }
+                        }
+
+                        // Apply fallback status for any active device that failed to query across all its instances
+                        for id in &active_ids {
+                            if !new_statuses.contains_key(id) {
+                                let last_status = {
+                                    let s = state_clone.lock().unwrap();
+                                    s.device_statuses.get(id).cloned()
+                                };
+                                if let Some(last) = last_status {
+                                    log_to_file(&format!("Falling back to last status for {}: {:?}", id, last));
+                                    new_statuses.insert(id.clone(), last);
+                                } else {
+                                    log_to_file(&format!("No fallback status found for {}", id));
                                 }
                             }
                         }
