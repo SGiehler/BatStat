@@ -311,6 +311,21 @@ impl eframe::App for SettingsWindow {
                                         ui.separator();
                                         ui.add_space(10.0);
 
+                                        // Debug Logging
+                                        ui.horizontal(|ui| {
+                                            ui.vertical(|ui| {
+                                                ui.label(egui::RichText::new("Debug Logging").color(egui::Color32::WHITE).font(egui::FontId::proportional(13.0)));
+                                                ui.label(egui::RichText::new("Write detailed diagnostic logs to debug.log.").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)).italics());
+                                            });
+                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                toggle_ui(ui, &mut self.config.enable_debug_logging);
+                                            });
+                                        });
+
+                                        ui.add_space(10.0);
+                                        ui.separator();
+                                        ui.add_space(10.0);
+
                                         // Custom Icons Folder Shortcut
                                         ui.horizontal(|ui| {
                                             ui.vertical(|ui| {

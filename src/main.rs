@@ -40,7 +40,12 @@ struct SharedState {
     update_status: UpdateStatus,
 }
 
+pub static ENABLE_DEBUG_LOG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 pub fn log_to_file(msg: &str) {
+    if !ENABLE_DEBUG_LOG.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
     if let Some(mut path) = crate::config::get_config_path() {
         path.pop(); // Remove "config.toml"
         path.push("debug.log");
@@ -496,6 +501,7 @@ impl eframe::App for BatStatApp {
                     {
                         let mut s = self.state.lock().unwrap();
                         s.config = ui_state.config.clone();
+                        ENABLE_DEBUG_LOG.store(s.config.enable_debug_logging, std::sync::atomic::Ordering::Relaxed);
                     }
                     if !has_tray {
                         // In fallback mode, closing the window exits the app
@@ -584,6 +590,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let config = load_config();
+    ENABLE_DEBUG_LOG.store(config.enable_debug_logging, std::sync::atomic::Ordering::Relaxed);
 
     crate::config::setup_icons_folder();
     

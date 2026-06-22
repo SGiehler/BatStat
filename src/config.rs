@@ -17,6 +17,8 @@ pub struct AppConfig {
     pub autostart: bool,
     #[serde(default = "default_true")]
     pub enable_notifications: bool,
+    #[serde(default)]
+    pub enable_debug_logging: bool,
     pub devices: Vec<DeviceConfig>,
 }
 
@@ -30,6 +32,7 @@ impl Default for AppConfig {
             polling_interval_secs: 60,
             autostart: false,
             enable_notifications: true,
+            enable_debug_logging: false,
             devices: Vec::new(),
         }
     }
@@ -322,5 +325,20 @@ mod tests {
         assert_eq!(config.devices.len(), 1);
         config.devices.remove(0);
         assert_eq!(config.devices.len(), 0);
+    }
+
+    #[test]
+    fn test_config_deserialization_defaults() {
+        let toml_content = r#"
+            polling_interval_secs = 45
+            autostart = true
+            enable_notifications = false
+            devices = []
+        "#;
+        let config: super::AppConfig = toml::from_str(toml_content).unwrap();
+        assert_eq!(config.polling_interval_secs, 45);
+        assert_eq!(config.autostart, true);
+        assert_eq!(config.enable_notifications, false);
+        assert_eq!(config.enable_debug_logging, false);
     }
 }
