@@ -122,25 +122,25 @@ impl eframe::App for SettingsWindow {
         visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(0x25, 0x25, 0x40); // Card color
         visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(0x39, 0x39, 0x52)); // Outline border
         visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)); // Secondary text
-        visuals.widgets.noninteractive.rounding = egui::Rounding::same(4.0);
+        visuals.widgets.noninteractive.rounding = egui::Rounding::same(8.0);
         
         // Setup interactive elements (inactive buttons, sliders, etc.)
         visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(0x25, 0x25, 0x40);
         visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(0x39, 0x39, 0x52));
         visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
-        visuals.widgets.inactive.rounding = egui::Rounding::same(4.0);
+        visuals.widgets.inactive.rounding = egui::Rounding::same(8.0);
         
         // Hover state
         visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(0x2c, 0x2c, 0x4d); // card highlight
         visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(0x4c, 0xc9, 0xf0)); // Electric blue border
         visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
-        visuals.widgets.hovered.rounding = egui::Rounding::same(4.0);
+        visuals.widgets.hovered.rounding = egui::Rounding::same(8.0);
         
         // Active/Pressed state
         visuals.widgets.active.bg_fill = egui::Color32::from_rgb(0x4c, 0xc9, 0xf0);
         visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(0x4c, 0xc9, 0xf0));
         visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(0x16, 0x16, 0x16));
-        visuals.widgets.active.rounding = egui::Rounding::same(4.0);
+        visuals.widgets.active.rounding = egui::Rounding::same(8.0);
         
         // Slider background track - must be lighter than panel_fill to show the horizontal line!
         visuals.extreme_bg_color = egui::Color32::from_rgb(0x4e, 0x4e, 0x70);
@@ -194,7 +194,7 @@ impl eframe::App for SettingsWindow {
                             .strong()
                             .font(egui::FontId::proportional(12.0))
                     ).fill(egui::Color32::from_rgb(0x4c, 0xc9, 0xf0))
-                     .rounding(4.0)
+                     .rounding(8.0)
                      .min_size(egui::vec2(100.0, 28.0));
                     
                     if ui.add(save_btn).clicked() {
@@ -226,49 +226,103 @@ impl eframe::App for SettingsWindow {
                 .inner_margin(egui::Margin { left: 16.0, right: 16.0, top: 12.0, bottom: 12.0 })
             )
             .show(ctx, |ui| {
-                // Tab Navigation Bar
+                // Tab Navigation Bar (Segmented Control Pill Style)
                 ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 8.0;
+                    ui.add_space((ui.available_width() - 240.0) / 2.0); // Center the tab switcher
                     
-                    let tab_width = 110.0;
-                    let tab_height = 28.0;
+                    let height = 32.0;
+                    let width = 240.0;
                     
-                    // Tab: Devices
+                    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+                    
+                    // Pill container background
+                    ui.painter().rect_filled(
+                        rect,
+                        16.0, // Fully rounded pill
+                        egui::Color32::from_rgb(0x12, 0x12, 0x24) // Dark background
+                    );
+                    
+                    // Pill container border
+                    ui.painter().rect_stroke(
+                        rect,
+                        16.0,
+                        egui::Stroke::new(1.0, egui::Color32::from_rgb(0x39, 0x39, 0x52))
+                    );
+                    
+                    let half_width = width / 2.0;
+                    
+                    // Left and Right inner rects with inset
+                    let devices_rect = egui::Rect::from_min_max(
+                        rect.min + egui::vec2(2.0, 2.0),
+                        rect.min + egui::vec2(half_width - 1.0, height - 2.0)
+                    );
+                    let general_rect = egui::Rect::from_min_max(
+                        rect.min + egui::vec2(half_width + 1.0, 2.0),
+                        rect.max - egui::vec2(2.0, 2.0)
+                    );
+                    
                     let is_devices = self.active_tab == Tab::Devices;
-                    let devices_btn = egui::Button::new(
-                        egui::RichText::new("📱 Devices")
-                            .color(if is_devices { egui::Color32::WHITE } else { egui::Color32::from_rgb(0x8d, 0x8d, 0x8d) })
-                            .strong()
-                            .font(egui::FontId::proportional(12.0))
-                    )
-                    .fill(if is_devices { egui::Color32::from_rgb(0x25, 0x25, 0x40) } else { egui::Color32::TRANSPARENT })
-                    .stroke(if is_devices { egui::Stroke::new(1.0, egui::Color32::from_rgb(0x4c, 0xc9, 0xf0)) } else { egui::Stroke::new(1.0, egui::Color32::from_rgb(0x39, 0x39, 0x52)) })
-                    .rounding(4.0)
-                    .min_size(egui::vec2(tab_width, tab_height));
+                    let is_general = self.active_tab == Tab::General;
                     
-                    if ui.add(devices_btn).clicked() {
+                    let devices_resp = ui.interact(devices_rect, ui.id().with("devices_tab_btn"), egui::Sense::click());
+                    if devices_resp.clicked() {
                         self.active_tab = Tab::Devices;
                     }
+                    let devices_hover = devices_resp.hovered();
                     
-                    // Tab: General
-                    let is_general = self.active_tab == Tab::General;
-                    let general_btn = egui::Button::new(
-                        egui::RichText::new("⚙ General")
-                            .color(if is_general { egui::Color32::WHITE } else { egui::Color32::from_rgb(0x8d, 0x8d, 0x8d) })
-                            .strong()
-                            .font(egui::FontId::proportional(12.0))
-                    )
-                    .fill(if is_general { egui::Color32::from_rgb(0x25, 0x25, 0x40) } else { egui::Color32::TRANSPARENT })
-                    .stroke(if is_general { egui::Stroke::new(1.0, egui::Color32::from_rgb(0x4c, 0xc9, 0xf0)) } else { egui::Stroke::new(1.0, egui::Color32::from_rgb(0x39, 0x39, 0x52)) })
-                    .rounding(4.0)
-                    .min_size(egui::vec2(tab_width, tab_height));
-                    
-                    if ui.add(general_btn).clicked() {
+                    let general_resp = ui.interact(general_rect, ui.id().with("general_tab_btn"), egui::Sense::click());
+                    if general_resp.clicked() {
                         self.active_tab = Tab::General;
                     }
+                    let general_hover = general_resp.hovered();
+                    
+                    // Paint active highlight or hover indicator
+                    if is_devices {
+                        ui.painter().rect_filled(
+                            devices_rect,
+                            14.0,
+                            egui::Color32::from_rgb(0x4c, 0xc9, 0xf0) // Electric blue active
+                        );
+                    } else if devices_hover {
+                        ui.painter().rect_filled(
+                            devices_rect,
+                            14.0,
+                            egui::Color32::from_rgb(0x25, 0x25, 0x40) // Card color hover highlight
+                        );
+                    }
+                    
+                    if is_general {
+                        ui.painter().rect_filled(
+                            general_rect,
+                            14.0,
+                            egui::Color32::from_rgb(0x4c, 0xc9, 0xf0) // Electric blue active
+                        );
+                    } else if general_hover {
+                        ui.painter().rect_filled(
+                            general_rect,
+                            14.0,
+                            egui::Color32::from_rgb(0x25, 0x25, 0x40) // Card color hover highlight
+                        );
+                    }
+                    
+                    // Paint text labels
+                    ui.painter().text(
+                        devices_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "📱 Devices",
+                        egui::FontId::proportional(11.0),
+                        if is_devices { egui::Color32::from_rgb(0x16, 0x16, 0x16) } else { egui::Color32::from_rgb(0x8d, 0x8d, 0x8d) }
+                    );
+                    ui.painter().text(
+                        general_rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        "⚙ General",
+                        egui::FontId::proportional(11.0),
+                        if is_general { egui::Color32::from_rgb(0x16, 0x16, 0x16) } else { egui::Color32::from_rgb(0x8d, 0x8d, 0x8d) }
+                    );
                 });
                 
-                ui.add_space(12.0);
+                ui.add_space(16.0);
                 
                 egui::ScrollArea::vertical()
                     .show(ui, |ui| {
@@ -296,7 +350,7 @@ impl SettingsWindow {
             egui::Frame::none()
                 .fill(egui::Color32::from_rgb(0x25, 0x25, 0x40))
                 .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(0x39, 0x39, 0x52)))
-                .rounding(4.0)
+                .rounding(10.0)
                 .inner_margin(egui::Margin { left: 12.0, right: 12.0, top: 12.0, bottom: 12.0 })
                 .show(ui, |ui| {
                     ui.vertical(|ui| {
@@ -306,7 +360,7 @@ impl SettingsWindow {
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 let text = format!("{}s", self.config.polling_interval_secs);
                                 let (badge_rect, _) = ui.allocate_exact_size(egui::vec2(40.0, 18.0), egui::Sense::hover());
-                                ui.painter().rect_filled(badge_rect, 4.0, egui::Color32::from_rgb(0x1a, 0x1a, 0x2e));
+                                ui.painter().rect_filled(badge_rect, 6.0, egui::Color32::from_rgb(0x1a, 0x1a, 0x2e));
                                 ui.painter().text(
                                     badge_rect.center(),
                                     egui::Align2::CENTER_CENTER,
@@ -441,7 +495,7 @@ impl SettingsWindow {
                                         .color(egui::Color32::WHITE)
                                         .font(egui::FontId::proportional(11.0))
                                         .strong()
-                                ).fill(egui::Color32::from_rgb(0x2c, 0x2c, 0x4d)).rounding(4.0);
+                                ).fill(egui::Color32::from_rgb(0x2c, 0x2c, 0x4d)).rounding(8.0);
 
                                 if ui.add(btn).clicked() {
                                     if let Some(dir) = crate::config::get_icons_dir_path() {
@@ -495,7 +549,7 @@ impl SettingsWindow {
                                                     .color(egui::Color32::from_rgb(0x16, 0x16, 0x16))
                                                     .font(egui::FontId::proportional(11.0))
                                                     .strong()
-                                            ).fill(egui::Color32::from_rgb(0x00, 0xe6, 0x76)).rounding(4.0);
+                                            ).fill(egui::Color32::from_rgb(0x00, 0xe6, 0x76)).rounding(8.0);
                                             
                                             if ui.add(btn).clicked() {
                                                 self.request_download_install = Some(asset.browser_download_url.clone());
@@ -506,7 +560,7 @@ impl SettingsWindow {
                                                     .color(egui::Color32::WHITE)
                                                     .font(egui::FontId::proportional(11.0))
                                                     .strong()
-                                            ).fill(egui::Color32::from_rgb(0x2c, 0x2c, 0x4d)).rounding(4.0);
+                                            ).fill(egui::Color32::from_rgb(0x2c, 0x2c, 0x4d)).rounding(8.0);
                                             
                                             if ui.add(btn).clicked() {
                                                 let _ = std::process::Command::new("explorer").arg("https://github.com/SGiehler/BatStat/releases").spawn();
@@ -518,14 +572,14 @@ impl SettingsWindow {
                                             egui::RichText::new("⏳ Downloading...")
                                                 .font(egui::FontId::proportional(11.0))
                                                 .strong()
-                                        ).rounding(4.0));
+                                        ).rounding(8.0));
                                     }
                                     crate::UpdateStatus::Checking => {
                                         let _ = ui.add_enabled(false, egui::Button::new(
                                             egui::RichText::new("🔄 Checking...")
                                                 .font(egui::FontId::proportional(11.0))
                                                 .strong()
-                                        ).rounding(4.0));
+                                        ).rounding(8.0));
                                     }
                                     _ => {
                                         let btn = egui::Button::new(
@@ -533,7 +587,7 @@ impl SettingsWindow {
                                                 .color(egui::Color32::WHITE)
                                                 .font(egui::FontId::proportional(11.0))
                                                 .strong()
-                                        ).fill(egui::Color32::from_rgb(0x2c, 0x2c, 0x4d)).rounding(4.0);
+                                        ).fill(egui::Color32::from_rgb(0x2c, 0x2c, 0x4d)).rounding(8.0);
                                         
                                         if ui.add(btn).clicked() {
                                             self.request_update_check = true;
@@ -563,7 +617,7 @@ impl SettingsWindow {
                             .color(egui::Color32::WHITE)
                             .font(egui::FontId::proportional(10.0))
                             .strong()
-                    ).fill(egui::Color32::from_rgb(0x2c, 0x2c, 0x4d)).rounding(4.0);
+                    ).fill(egui::Color32::from_rgb(0x2c, 0x2c, 0x4d)).rounding(8.0);
                     
                     if ui.add(btn).clicked() {
                         self.request_poll = true;
@@ -581,7 +635,7 @@ impl SettingsWindow {
                 egui::Frame::none()
                     .fill(egui::Color32::from_rgb(0x25, 0x25, 0x40))
                     .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(0x39, 0x39, 0x52)))
-                    .rounding(4.0)
+                    .rounding(10.0)
                     .inner_margin(egui::Margin { left: 12.0, right: 12.0, top: 12.0, bottom: 12.0 })
                     .show(ui, |ui| {
                         ui.vertical(|ui| {
@@ -601,8 +655,8 @@ impl SettingsWindow {
                                 };
                                 
                                 let (tag_rect, _) = ui.allocate_exact_size(egui::vec2(52.0, 20.0), egui::Sense::hover());
-                                ui.painter().rect_filled(tag_rect, 4.0, egui::Color32::from_rgb(0x1a, 0x1a, 0x2e));
-                                ui.painter().rect_stroke(tag_rect, 4.0, egui::Stroke::new(1.0, egui::Color32::from_rgb(0x39, 0x39, 0x52)));
+                                ui.painter().rect_filled(tag_rect, 6.0, egui::Color32::from_rgb(0x1a, 0x1a, 0x2e));
+                                ui.painter().rect_stroke(tag_rect, 6.0, egui::Stroke::new(1.0, egui::Color32::from_rgb(0x39, 0x39, 0x52)));
                                 ui.painter().text(
                                     tag_rect.center(),
                                     egui::Align2::CENTER_CENTER,
