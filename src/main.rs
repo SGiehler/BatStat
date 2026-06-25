@@ -97,6 +97,116 @@ fn trigger_notification(name: &str, percentage: u8) {
         .show();
 }
 
+const FONT_4X7: [[u8; 7]; 10] = [
+    [0b0110, 0b1001, 0b1001, 0b1001, 0b1001, 0b1001, 0b0110], // 0
+    [0b0010, 0b0110, 0b0010, 0b0010, 0b0010, 0b0010, 0b0111], // 1
+    [0b0110, 0b1001, 0b0001, 0b0010, 0b0100, 0b1000, 0b1111], // 2
+    [0b0110, 0b1001, 0b0001, 0b0010, 0b0001, 0b1001, 0b0110], // 3
+    [0b1001, 0b1001, 0b1001, 0b1111, 0b0001, 0b0001, 0b0001], // 4
+    [0b1111, 0b1000, 0b1110, 0b0001, 0b0001, 0b1001, 0b0110], // 5
+    [0b0110, 0b1000, 0b1110, 0b1001, 0b1001, 0b1001, 0b0110], // 6
+    [0b1111, 0b0001, 0b0010, 0b0100, 0b0100, 0b0100, 0b0100], // 7
+    [0b0110, 0b1001, 0b0110, 0b1001, 0b1001, 0b1001, 0b0110], // 8
+    [0b0110, 0b1001, 0b1001, 0b0111, 0b0001, 0b0001, 0b0110], // 9
+];
+
+fn render_percentage_icon(pct: u8, charging: bool, threshold: u8) -> tray_icon::Icon {
+    let mut pixels = vec![0u8; 16 * 16 * 4];
+    
+    let digits = if pct >= 100 {
+        vec![1, 0, 0]
+    } else if pct >= 10 {
+        vec![(pct / 10) as usize, (pct % 10) as usize]
+    } else {
+        vec![pct as usize]
+    };
+
+    let x_offsets = match digits.len() {
+        1 => vec![6],
+        2 => vec![3, 8],
+        _ => vec![1, 6, 11],
+    };
+    let y_offset = 4;
+
+    let mut draw_digit = |digit: usize, x_offset: i32, y_offset: i32, r: u8, g: u8, b: u8, a: u8| {
+        let font_data = FONT_4X7[digit];
+        for row in 0..7 {
+            let val = font_data[row];
+            for col in 0..4 {
+                let bit = (val >> (3 - col)) & 1;
+                if bit == 1 {
+                    let px = x_offset + col as i32;
+                    let py = y_offset + row as i32;
+                    if px >= 0 && px < 16 && py >= 0 && py < 16 {
+                        let idx = ((py * 16 + px) * 4) as usize;
+                        pixels[idx] = r;
+                        pixels[idx + 1] = g;
+                        pixels[idx + 2] = b;
+                        pixels[idx + 3] = a;
+                    }
+                }
+            }
+        }
+    };
+
+    for (i, &digit) in digits.iter().enumerate() {
+        let x_off = x_offsets[i];
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                if dx != 0 || dy != 0 {
+                    draw_digit(digit, x_off + dx, y_offset + dy, 0, 0, 0, 255);
+                }
+            }
+        }
+    }
+
+    let (r, g, b) = if charging {
+        (0, 230, 118) // Green
+    } else if pct <= threshold {
+        (218, 30, 40) // Red
+    } else {
+        (255, 255, 255) // White
+    };
+
+    for (i, &digit) in digits.iter().enumerate() {
+        let x_off = x_offsets[i];
+        draw_digit(digit, x_off, y_offset, r, g, b, 255);
+    }
+
+    tray_icon::Icon::from_rgba(pixels, 16, 16).unwrap()
+}
+
+fn find_channel_status(
+    s: &SharedState,
+    target_channel_str: &str,
+) -> Option<(String, u8, bool, u8)> {
+    let parts: Vec<&str> = target_channel_str.split(':').collect();
+    if parts.len() != 2 {
+        return None;
+    }
+    let target_unique_id = parts[0];
+    let target_channel_type = parts[1];
+
+    let status = s.device_statuses.get(target_unique_id)?;
+    if let DeviceBatteryStatus::Online { channels } = status {
+        for chan in channels.iter().flatten() {
+            let chan_type_str = match chan.channel_type {
+                crate::plugins::ChannelType::Main => "Main",
+                crate::plugins::ChannelType::Left => "Left",
+                crate::plugins::ChannelType::Right => "Right",
+                crate::plugins::ChannelType::Case => "Case",
+            };
+            if chan_type_str == target_channel_type {
+                let dev = s.config.devices.iter()
+                    .find(|d| d.unique_id == target_unique_id)?;
+                return Some((dev.name.clone(), chan.percentage, chan.charging, dev.threshold));
+            }
+        }
+    }
+    None
+}
+
+
 fn update_tray_icon_and_menu_local(
     state: &Arc<Mutex<SharedState>>,
     tray: &mut tray_icon::TrayIcon,
@@ -125,8 +235,26 @@ fn update_tray_icon_and_menu_local(
         unsafe {
             LAST_DISPLAYED_LEN = 0;
         }
-        let _ = tray.set_tooltip(Some("BatStat Battery Monitor"));
-        load_icon_from_memory(include_bytes!("icons/ok.png"))
+        
+        let mut rendered_pct_icon = None;
+        let mut tooltip_str = None;
+
+        if let Some(ref target_channel_str) = s.config.tray_battery_channel {
+            if let Some((dev_name, pct, charging, threshold)) = find_channel_status(&s, target_channel_str) {
+                rendered_pct_icon = Some(render_percentage_icon(pct, charging, threshold));
+                tooltip_str = Some(format!("{}: {}%{}", dev_name, pct, if charging { " (Charging)" } else { "" }));
+            }
+        }
+
+        if let Some(pct_icon) = rendered_pct_icon {
+            if let Some(ref t_str) = tooltip_str {
+                let _ = tray.set_tooltip(Some(t_str));
+            }
+            pct_icon
+        } else {
+            let _ = tray.set_tooltip(Some("BatStat Battery Monitor"));
+            load_icon_from_memory(include_bytes!("icons/ok.png"))
+        }
     } else {
         unsafe {
             let last_id_str = std::str::from_utf8(&LAST_DISPLAYED_ID[..LAST_DISPLAYED_LEN]).unwrap_or("");
@@ -906,8 +1034,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("BatStat Settings")
-            .with_inner_size([480.0, 700.0])
-            .with_min_inner_size([400.0, 500.0])
+            .with_inner_size([720.0, 700.0])
+            .with_min_inner_size([600.0, 500.0])
             .with_resizable(true),
         ..Default::default()
     };

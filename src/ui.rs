@@ -3,6 +3,12 @@ use crate::autostart::set_autostart;
 use crate::plugins::{DeviceBatteryStatus, BatteryChannel, ChannelType};
 use eframe::egui;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tab {
+    Devices,
+    General,
+}
+
 pub struct SettingsWindow {
     pub config: AppConfig,
     pub active_devices: Vec<String>, // list of active unique_ids
@@ -14,6 +20,7 @@ pub struct SettingsWindow {
     pub update_status: crate::UpdateStatus,
     pub request_update_check: bool,
     pub request_download_install: Option<String>,
+    pub active_tab: Tab,
 }
 
 impl SettingsWindow {
@@ -34,6 +41,7 @@ impl SettingsWindow {
             update_status: crate::UpdateStatus::Idle,
             request_update_check: false,
             request_download_install: None,
+            active_tab: Tab::Devices,
         }
     }
 }
@@ -211,493 +219,598 @@ impl eframe::App for SettingsWindow {
                 });
             });
 
-        // 3. CENTRAL PANEL: Scrollable content
+        // 3. CENTRAL PANEL: Tabbed Scrollable content
         egui::CentralPanel::default()
             .frame(egui::Frame::none()
                 .fill(egui::Color32::from_rgb(0x1a, 0x1a, 0x2e))
                 .inner_margin(egui::Margin { left: 16.0, right: 16.0, top: 12.0, bottom: 12.0 })
             )
             .show(ctx, |ui| {
+                // Tab Navigation Bar
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    
+                    let tab_width = 110.0;
+                    let tab_height = 28.0;
+                    
+                    // Tab: Devices
+                    let is_devices = self.active_tab == Tab::Devices;
+                    let devices_btn = egui::Button::new(
+                        egui::RichText::new("📱 Devices")
+                            .color(if is_devices { egui::Color32::WHITE } else { egui::Color32::from_rgb(0x8d, 0x8d, 0x8d) })
+                            .strong()
+                            .font(egui::FontId::proportional(12.0))
+                    )
+                    .fill(if is_devices { egui::Color32::from_rgb(0x25, 0x25, 0x40) } else { egui::Color32::TRANSPARENT })
+                    .stroke(if is_devices { egui::Stroke::new(1.0, egui::Color32::from_rgb(0x4c, 0xc9, 0xf0)) } else { egui::Stroke::new(1.0, egui::Color32::from_rgb(0x39, 0x39, 0x52)) })
+                    .rounding(4.0)
+                    .min_size(egui::vec2(tab_width, tab_height));
+                    
+                    if ui.add(devices_btn).clicked() {
+                        self.active_tab = Tab::Devices;
+                    }
+                    
+                    // Tab: General
+                    let is_general = self.active_tab == Tab::General;
+                    let general_btn = egui::Button::new(
+                        egui::RichText::new("⚙ General")
+                            .color(if is_general { egui::Color32::WHITE } else { egui::Color32::from_rgb(0x8d, 0x8d, 0x8d) })
+                            .strong()
+                            .font(egui::FontId::proportional(12.0))
+                    )
+                    .fill(if is_general { egui::Color32::from_rgb(0x25, 0x25, 0x40) } else { egui::Color32::TRANSPARENT })
+                    .stroke(if is_general { egui::Stroke::new(1.0, egui::Color32::from_rgb(0x4c, 0xc9, 0xf0)) } else { egui::Stroke::new(1.0, egui::Color32::from_rgb(0x39, 0x39, 0x52)) })
+                    .rounding(4.0)
+                    .min_size(egui::vec2(tab_width, tab_height));
+                    
+                    if ui.add(general_btn).clicked() {
+                        self.active_tab = Tab::General;
+                    }
+                });
+                
+                ui.add_space(12.0);
+                
                 egui::ScrollArea::vertical()
                     .show(ui, |ui| {
-                        // Section A: Global Configuration
-                        ui.vertical(|ui| {
-                            ui.label(
-                                egui::RichText::new("⚙  GLOBAL CONFIGURATION")
-                                    .color(egui::Color32::from_rgb(0x4c, 0xc9, 0xf0))
-                                    .font(egui::FontId::proportional(10.0))
-                                    .strong()
-                            );
-                            ui.add_space(6.0);
-                            
-                            // Card
-                            egui::Frame::none()
-                                .fill(egui::Color32::from_rgb(0x25, 0x25, 0x40))
-                                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(0x39, 0x39, 0x52)))
-                                .rounding(4.0)
-                                .inner_margin(egui::Margin { left: 12.0, right: 12.0, top: 12.0, bottom: 12.0 })
-                                .show(ui, |ui| {
-                                    ui.vertical(|ui| {
-                                        // Polling Interval title + current badge
-                                        ui.horizontal(|ui| {
-                                            ui.label(egui::RichText::new("Polling Interval").color(egui::Color32::WHITE).font(egui::FontId::proportional(13.0)));
-                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                let text = format!("{}s", self.config.polling_interval_secs);
-                                                let (badge_rect, _) = ui.allocate_exact_size(egui::vec2(40.0, 18.0), egui::Sense::hover());
-                                                ui.painter().rect_filled(badge_rect, 4.0, egui::Color32::from_rgb(0x1a, 0x1a, 0x2e));
-                                                ui.painter().text(
-                                                    badge_rect.center(),
-                                                    egui::Align2::CENTER_CENTER,
-                                                    &text,
-                                                    egui::FontId::monospace(10.0),
-                                                    egui::Color32::from_rgb(0x4c, 0xc9, 0xf0)
-                                                );
-                                            });
-                                        });
-                                        ui.add_space(4.0);
-                                        
-                                        // Slider
-                                        ui.scope(|ui| {
-                                            ui.visuals_mut().widgets.inactive.bg_fill = egui::Color32::from_rgb(0x39, 0x39, 0x52);
-                                            ui.visuals_mut().widgets.inactive.fg_stroke = egui::Stroke::new(2.0, egui::Color32::from_rgb(0x4c, 0xc9, 0xf0));
-                                            ui.spacing_mut().slider_width = ui.available_width() - 8.0;
-                                            ui.add(egui::Slider::new(&mut self.config.polling_interval_secs, 1..=60).show_value(false).trailing_fill(true));
-                                        });
-                                        
-                                        ui.horizontal(|ui| {
-                                            ui.label(egui::RichText::new("1s").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)));
-                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                ui.label(egui::RichText::new("60s").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)));
-                                            });
-                                        });
-                                        
-                                        ui.add_space(10.0);
-                                        ui.separator();
-                                        ui.add_space(10.0);
-                                        
-                                        // Startup launch
-                                        ui.horizontal(|ui| {
-                                            ui.vertical(|ui| {
-                                                ui.label(egui::RichText::new("Launch on Startup").color(egui::Color32::WHITE).font(egui::FontId::proportional(13.0)));
-                                                ui.label(egui::RichText::new("Start BatStat automatically with Windows").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)).italics());
-                                            });
-                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                let mut autostart = self.config.autostart;
-                                                if toggle_ui(ui, &mut autostart).changed() {
-                                                    self.config.autostart = autostart;
-                                                    if let Err(e) = set_autostart(autostart) {
-                                                        eprintln!("Failed to set autostart: {}", e);
-                                                    }
-                                                }
-                                            });
-                                        });
-                                        
-                                        ui.add_space(10.0);
-                                        ui.separator();
-                                        ui.add_space(10.0);
-                                        
-                                        // Windows Notification Alerts
-                                        ui.horizontal(|ui| {
-                                            ui.vertical(|ui| {
-                                                ui.label(egui::RichText::new("Windows Notification Alerts").color(egui::Color32::WHITE).font(egui::FontId::proportional(13.0)));
-                                                ui.label(egui::RichText::new("Show desktop alerts when battery levels are low.").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)).italics());
-                                            });
-                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                toggle_ui(ui, &mut self.config.enable_notifications);
-                                            });
-                                        });
-
-                                        ui.add_space(10.0);
-                                        ui.separator();
-                                        ui.add_space(10.0);
-
-                                        // Debug Logging
-                                        ui.horizontal(|ui| {
-                                            ui.vertical(|ui| {
-                                                ui.label(egui::RichText::new("Debug Logging").color(egui::Color32::WHITE).font(egui::FontId::proportional(13.0)));
-                                                ui.label(egui::RichText::new("Write detailed diagnostic logs to debug.log.").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)).italics());
-                                            });
-                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                toggle_ui(ui, &mut self.config.enable_debug_logging);
-                                            });
-                                        });
-
-                                        ui.add_space(10.0);
-                                        ui.separator();
-                                        ui.add_space(10.0);
-
-                                        // Custom Icons Folder Shortcut
-                                        ui.horizontal(|ui| {
-                                            ui.vertical(|ui| {
-                                                ui.label(egui::RichText::new("Custom Icons Folder").color(egui::Color32::WHITE).font(egui::FontId::proportional(13.0)));
-                                                ui.label(egui::RichText::new("Open directory where custom low battery icons are stored.").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)).italics());
-                                            });
-                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                let btn = egui::Button::new(
-                                                    egui::RichText::new("📁 Open Folder")
-                                                        .color(egui::Color32::WHITE)
-                                                        .font(egui::FontId::proportional(11.0))
-                                                        .strong()
-                                                ).fill(egui::Color32::from_rgb(0x2c, 0x2c, 0x4d)).rounding(4.0);
-
-                                                if ui.add(btn).clicked() {
-                                                    if let Some(dir) = crate::config::get_icons_dir_path() {
-                                                        let _ = std::process::Command::new("explorer").arg(dir).spawn();
-                                                    }
-                                                }
-                                            });
-                                        });
-
-                                        ui.add_space(10.0);
-                                        ui.separator();
-                                        ui.add_space(10.0);
-
-                                        // Software Updates Section
-                                        ui.horizontal(|ui| {
-                                            ui.vertical(|ui| {
-                                                ui.label(egui::RichText::new("Software Updates").color(egui::Color32::WHITE).font(egui::FontId::proportional(13.0)));
-                                                
-                                                match &self.update_status {
-                                                    crate::UpdateStatus::Idle => {
-                                                        ui.label(egui::RichText::new(format!("Current version: v{}", env!("CARGO_PKG_VERSION"))).color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)).italics());
-                                                    }
-                                                    crate::UpdateStatus::Checking => {
-                                                        ui.label(egui::RichText::new("Checking for updates...").color(egui::Color32::from_rgb(0x4c, 0xc9, 0xf0)).font(egui::FontId::proportional(9.0)).italics());
-                                                    }
-                                                    crate::UpdateStatus::Available(info) => {
-                                                        ui.label(egui::RichText::new(format!("Update available: {}", info.tag_name)).color(egui::Color32::from_rgb(0x00, 0xe6, 0x76)).font(egui::FontId::proportional(9.0)).strong());
-                                                    }
-                                                    crate::UpdateStatus::NoUpdate => {
-                                                        ui.label(egui::RichText::new("You are running the latest version.").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)).italics());
-                                                    }
-                                                    crate::UpdateStatus::Downloading(progress) => {
-                                                        ui.label(egui::RichText::new(format!("Downloading update: {:.0}%", progress * 100.0)).color(egui::Color32::from_rgb(0x4c, 0xc9, 0xf0)).font(egui::FontId::proportional(9.0)).strong());
-                                                    }
-                                                    crate::UpdateStatus::ReadyToInstall(_) => {
-                                                        ui.label(egui::RichText::new("Ready to install.").color(egui::Color32::from_rgb(0x00, 0xe6, 0x76)).font(egui::FontId::proportional(9.0)).strong());
-                                                    }
-                                                    crate::UpdateStatus::Error(e) => {
-                                                        ui.label(egui::RichText::new(format!("Error: {}", e)).color(egui::Color32::from_rgb(0xda, 0x1e, 0x28)).font(egui::FontId::proportional(9.0)).italics());
-                                                    }
-                                                }
-                                            });
-                                            
-                                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                match &self.update_status {
-                                                    crate::UpdateStatus::Available(info) => {
-                                                        let msi_asset = info.assets.iter().find(|a| a.name.ends_with(".msi"));
-                                                        if let Some(asset) = msi_asset {
-                                                            let btn = egui::Button::new(
-                                                                egui::RichText::new("💾 Update Now")
-                                                                    .color(egui::Color32::from_rgb(0x16, 0x16, 0x16))
-                                                                    .font(egui::FontId::proportional(11.0))
-                                                                    .strong()
-                                                            ).fill(egui::Color32::from_rgb(0x00, 0xe6, 0x76)).rounding(4.0);
-                                                            
-                                                            if ui.add(btn).clicked() {
-                                                                self.request_download_install = Some(asset.browser_download_url.clone());
-                                                            }
-                                                        } else {
-                                                            let btn = egui::Button::new(
-                                                                egui::RichText::new("🌐 View Releases")
-                                                                    .color(egui::Color32::WHITE)
-                                                                    .font(egui::FontId::proportional(11.0))
-                                                                    .strong()
-                                                            ).fill(egui::Color32::from_rgb(0x2c, 0x2c, 0x4d)).rounding(4.0);
-                                                            
-                                                            if ui.add(btn).clicked() {
-                                                                let _ = std::process::Command::new("explorer").arg("https://github.com/SGiehler/BatStat/releases").spawn();
-                                                            }
-                                                        }
-                                                    }
-                                                    crate::UpdateStatus::Downloading(_) => {
-                                                        let _ = ui.add_enabled(false, egui::Button::new(
-                                                            egui::RichText::new("⏳ Downloading...")
-                                                                .font(egui::FontId::proportional(11.0))
-                                                                .strong()
-                                                        ).rounding(4.0));
-                                                    }
-                                                    crate::UpdateStatus::Checking => {
-                                                        let _ = ui.add_enabled(false, egui::Button::new(
-                                                            egui::RichText::new("🔄 Checking...")
-                                                                .font(egui::FontId::proportional(11.0))
-                                                                .strong()
-                                                        ).rounding(4.0));
-                                                    }
-                                                    _ => {
-                                                        let btn = egui::Button::new(
-                                                            egui::RichText::new("🔄 Check Updates")
-                                                                .color(egui::Color32::WHITE)
-                                                                .font(egui::FontId::proportional(11.0))
-                                                                .strong()
-                                                        ).fill(egui::Color32::from_rgb(0x2c, 0x2c, 0x4d)).rounding(4.0);
-                                                        
-                                                        if ui.add(btn).clicked() {
-                                                            self.request_update_check = true;
-                                                        }
-                                                    }
-                                                }
-                                            });
-                                        });
-                                    });
-                                });
-                        });
-                        
-                        ui.add_space(16.0);
-                        
-                        // Section B: Peripherals (With dynamic detect devices button)
-                        ui.vertical(|ui| {
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    egui::RichText::new("📱  CONNECTED PERIPHERALS")
-                                        .color(egui::Color32::from_rgb(0x4c, 0xc9, 0xf0))
-                                        .font(egui::FontId::proportional(10.0))
-                                        .strong()
-                                );
-                                
-                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    let btn = egui::Button::new(
-                                        egui::RichText::new("🔄 Detect Devices")
-                                            .color(egui::Color32::WHITE)
-                                            .font(egui::FontId::proportional(10.0))
-                                            .strong()
-                                    ).fill(egui::Color32::from_rgb(0x2c, 0x2c, 0x4d)).rounding(4.0);
-                                    
-                                    if ui.add(btn).clicked() {
-                                        self.request_poll = true;
-                                    }
-                                });
-                            });
-                            ui.add_space(6.0);
-                            
-                            let mut to_remove = None;
-                            
-                            for (idx, dev) in self.config.devices.iter_mut().enumerate() {
-                                let is_active = self.active_devices.contains(&dev.unique_id);
-                                
-                                // Render card
-                                egui::Frame::none()
-                                    .fill(egui::Color32::from_rgb(0x25, 0x25, 0x40))
-                                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(0x39, 0x39, 0x52)))
-                                    .rounding(4.0)
-                                    .inner_margin(egui::Margin { left: 12.0, right: 12.0, top: 12.0, bottom: 12.0 })
-                                    .show(ui, |ui| {
-                                        ui.vertical(|ui| {
-                                            // Row 1: Type badge + Name/Status + Enabled checkbox
-                                            ui.horizontal(|ui| {
-                                                // Type badge (standard letters, 100% robust rendering)
-                                                let tag = if dev.unique_id.starts_with("pulsar_") || dev.unique_id.starts_with("logitech_") {
-                                                    "MOUSE"
-                                                } else if dev.unique_id.starts_with("xbox_") {
-                                                    "GAMEPAD"
-                                                } else if dev.unique_id.starts_with("gamebuds") {
-                                                    "BUDS"
-                                                } else if dev.unique_id.starts_with("keyboard") || dev.unique_id.contains("keyboard") {
-                                                    "KEYBOARD"
-                                                } else {
-                                                    "DEV"
-                                                };
-                                                
-                                                let (tag_rect, _) = ui.allocate_exact_size(egui::vec2(52.0, 20.0), egui::Sense::hover());
-                                                ui.painter().rect_filled(tag_rect, 4.0, egui::Color32::from_rgb(0x1a, 0x1a, 0x2e));
-                                                ui.painter().rect_stroke(tag_rect, 4.0, egui::Stroke::new(1.0, egui::Color32::from_rgb(0x39, 0x39, 0x52)));
-                                                ui.painter().text(
-                                                    tag_rect.center(),
-                                                    egui::Align2::CENTER_CENTER,
-                                                    tag,
-                                                    egui::FontId::proportional(9.0),
-                                                    egui::Color32::from_rgb(0x4c, 0xc9, 0xf0) // Electric Blue text
-                                                );
-                                                
-                                                ui.add_space(6.0);
-                                                
-                                                // Title and status dot with battery levels
-                                                ui.vertical(|ui| {
-                                                    ui.label(egui::RichText::new(&dev.name).color(egui::Color32::WHITE).font(egui::FontId::proportional(13.0)).strong());
-                                                    
-                                                    ui.horizontal(|ui| {
-                                                        if let Some(status) = self.device_statuses.get(&dev.unique_id) {
-                                                            match status {
-                                                                DeviceBatteryStatus::Online { channels } => {
-                                                                    let active_channels: Vec<&BatteryChannel> = channels.iter().flatten().collect();
-                                                                    if active_channels.is_empty() {
-                                                                        let dot_color = egui::Color32::from_rgb(0x8d, 0x8d, 0x8d);
-                                                                        let (rect, _) = ui.allocate_exact_size(egui::vec2(6.0, 6.0), egui::Sense::hover());
-                                                                        ui.painter().circle_filled(rect.center(), 3.0, dot_color);
-                                                                        ui.label(egui::RichText::new("DISCONNECTED").color(dot_color).font(egui::FontId::proportional(10.0)).strong());
-                                                                    } else {
-                                                                        let dot_color = egui::Color32::from_rgb(0x00, 0xe6, 0x76);
-                                                                        let (rect, _) = ui.allocate_exact_size(egui::vec2(6.0, 6.0), egui::Sense::hover());
-                                                                        ui.painter().circle_filled(rect.center(), 3.0, dot_color);
-                                                                        
-                                                                        for (c_idx, chan) in active_channels.iter().enumerate() {
-                                                                            if c_idx > 0 {
-                                                                                ui.label(egui::RichText::new("|").color(egui::Color32::from_rgb(0x39, 0x39, 0x52)));
-                                                                            }
-                                                                            let prefix = match chan.channel_type {
-                                                                                ChannelType::Main => "",
-                                                                                ChannelType::Left => "L: ",
-                                                                                ChannelType::Right => "R: ",
-                                                                                ChannelType::Case => "Case: ",
-                                                                            };
-                                                                            let chan_str = format!("{}{}%{}", prefix, chan.percentage, if chan.charging { " ⚡" } else { "" });
-                                                                            ui.label(egui::RichText::new(chan_str).color(dot_color).font(egui::FontId::proportional(10.0)).strong());
-                                                                        }
-                                                                    }
-                                                                }
-                                                                DeviceBatteryStatus::Offline => {
-                                                                    let dot_color = egui::Color32::from_rgb(0x8d, 0x8d, 0x8d);
-                                                                    let (rect, _) = ui.allocate_exact_size(egui::vec2(6.0, 6.0), egui::Sense::hover());
-                                                                    ui.painter().circle_filled(rect.center(), 3.0, dot_color);
-                                                                    ui.label(egui::RichText::new("DISCONNECTED").color(dot_color).font(egui::FontId::proportional(10.0)).strong());
-                                                                }
-                                                            }
-                                                        } else {
-                                                            let dot_color = egui::Color32::from_rgb(0x8d, 0x8d, 0x8d);
-                                                            let (rect, _) = ui.allocate_exact_size(egui::vec2(6.0, 6.0), egui::Sense::hover());
-                                                            ui.painter().circle_filled(rect.center(), 3.0, dot_color);
-                                                            ui.label(egui::RichText::new("DISCONNECTED").color(dot_color).font(egui::FontId::proportional(10.0)).strong());
-                                                        }
-                                                    });
-                                                });
-                                                
-                                                // Enabled toggle
-                                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                    ui.checkbox(&mut dev.enabled, "");
-                                                    ui.label(egui::RichText::new("Enabled").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(10.0)));
-                                                });
-                                            });
-                                            
-                                            ui.add_space(6.0);
-                                            ui.separator();
-                                            ui.add_space(6.0);
-                                            
-                                            // Row 2: Custom Low Icon
-                                            ui.horizontal(|ui| {
-                                                ui.label(egui::RichText::new("LOW BATTERY ICON").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)).strong());
-                                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                    // Reset button
-                                                    if dev.low_battery_icon_path.is_some() {
-                                                        if ui.button(egui::RichText::new("Reset").font(egui::FontId::proportional(10.0))).clicked() {
-                                                            dev.low_battery_icon_path = None;
-                                                        }
-                                                    }
-                                                    
-                                                    // Dropdown combo box
-                                                    let available_icons = crate::config::get_icon_list();
-                                                    let current_selected = dev.low_battery_icon_path.as_deref().unwrap_or("Default");
-                                                    
-                                                    let default_icon_name = if dev.unique_id.starts_with("pulsar_") || dev.unique_id.starts_with("logitech_") {
-                                                        "low_mouse.png"
-                                                    } else if dev.unique_id.starts_with("xbox_") {
-                                                        "low_gamepad.png"
-                                                    } else if dev.unique_id.starts_with("gamebuds") {
-                                                        "low_buds.png"
-                                                    } else if dev.unique_id.starts_with("keyboard") || dev.unique_id.contains("keyboard") {
-                                                        "low_keyboard.png"
-                                                    } else {
-                                                        "ok.png"
-                                                    };
-                                                    let preview_icon_name = dev.low_battery_icon_path.clone().unwrap_or_else(|| default_icon_name.to_string());
-                                                    
-                                                    egui::ComboBox::new(format!("icon_combo_{}", dev.unique_id), "")
-                                                        .selected_text(current_selected)
-                                                        .width(160.0)
-                                                        .show_ui(ui, |ui| {
-                                                            // Default selection
-                                                            {
-                                                                let is_default = dev.low_battery_icon_path.is_none();
-                                                                let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 20.0), egui::Sense::click());
-                                                                if response.clicked() {
-                                                                    dev.low_battery_icon_path = None;
-                                                                }
-                                                                let visual = ui.style().interact(&response);
-                                                                if is_default || response.hovered() {
-                                                                    ui.painter().rect_filled(rect, 2.0, visual.bg_fill);
-                                                                }
-                                                                let image_rect = egui::Rect::from_min_size(rect.min + egui::vec2(4.0, 2.0), egui::vec2(16.0, 16.0));
-                                                                let text_pos = rect.min + egui::vec2(24.0, 4.0);
-                                                                if let Some(texture) = self.icon_textures.get(default_icon_name) {
-                                                                    ui.painter().image(texture.id(), image_rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
-                                                                }
-                                                                ui.painter().text(text_pos, egui::Align2::LEFT_TOP, "Default", egui::FontId::proportional(11.0), visual.fg_stroke.color);
-                                                            }
-                                                            
-                                                            // Custom options selection
-                                                            for icon_name in &available_icons {
-                                                                let is_selected = dev.low_battery_icon_path.as_deref() == Some(icon_name);
-                                                                let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 20.0), egui::Sense::click());
-                                                                if response.clicked() {
-                                                                    dev.low_battery_icon_path = Some(icon_name.clone());
-                                                                }
-                                                                let visual = ui.style().interact(&response);
-                                                                if is_selected || response.hovered() {
-                                                                    ui.painter().rect_filled(rect, 2.0, visual.bg_fill);
-                                                                }
-                                                                let image_rect = egui::Rect::from_min_size(rect.min + egui::vec2(4.0, 2.0), egui::vec2(16.0, 16.0));
-                                                                let text_pos = rect.min + egui::vec2(24.0, 4.0);
-                                                                if let Some(texture) = self.icon_textures.get(icon_name) {
-                                                                    ui.painter().image(texture.id(), image_rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
-                                                                }
-                                                                ui.painter().text(text_pos, egui::Align2::LEFT_TOP, icon_name, egui::FontId::proportional(11.0), visual.fg_stroke.color);
-                                                            }
-                                                        });
-                                                    
-                                                    // Show preview next to the combobox
-                                                    if let Some(texture) = self.icon_textures.get(&preview_icon_name) {
-                                                        ui.image((texture.id(), egui::vec2(20.0, 20.0)));
-                                                        ui.add_space(4.0);
-                                                    }
-                                                });
-                                            });
-                                            
-                                            ui.add_space(6.0);
-                                            
-                                            // Row 3: Alert Threshold Slider
-                                            ui.vertical(|ui| {
-                                                ui.horizontal(|ui| {
-                                                    ui.label(egui::RichText::new("Alert Threshold").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(11.0)));
-                                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                        ui.label(egui::RichText::new(format!("{}%", dev.threshold)).color(egui::Color32::from_rgb(0x4c, 0xc9, 0xf0)).font(egui::FontId::monospace(11.0)).strong());
-                                                    });
-                                                });
-                                                ui.add_space(2.0);
-                                                ui.scope(|ui| {
-                                                    ui.visuals_mut().widgets.inactive.bg_fill = egui::Color32::from_rgb(0x39, 0x39, 0x52);
-                                                    ui.visuals_mut().widgets.inactive.fg_stroke = egui::Stroke::new(2.0, egui::Color32::from_rgb(0x4c, 0xc9, 0xf0));
-                                                    ui.spacing_mut().slider_width = ui.available_width() - 8.0;
-                                                    ui.add(egui::Slider::new(&mut dev.threshold, 5..=95).show_value(false).trailing_fill(true));
-                                                });
-                                            });
-                                            
-                                            // Row 4: Remove Button (only shown for offline/disconnected devices)
-                                            if !is_active {
-                                                ui.add_space(4.0);
-                                                ui.horizontal(|ui| {
-                                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                                        let remove_btn = egui::Button::new(
-                                                            egui::RichText::new("🗑 Remove Device")
-                                                                .color(egui::Color32::from_rgb(0xda, 0x1e, 0x28)) // error red
-                                                                .font(egui::FontId::proportional(10.0))
-                                                        ).fill(egui::Color32::TRANSPARENT);
-                                                        
-                                                        if ui.add(remove_btn).clicked() {
-                                                            to_remove = Some(idx);
-                                                        }
-                                                    });
-                                                });
-                                            }
-                                        });
-                                    });
-                                ui.add_space(10.0);
-                            }
-                            
-                            if let Some(idx) = to_remove {
-                                self.config.devices.remove(idx);
-                                self.device_removed = true;
-                            }
-                        });
+                        match self.active_tab {
+                            Tab::Devices => self.render_devices_tab(ui),
+                            Tab::General => self.render_general_tab(ui),
+                        }
                     });
             });
     }
+}
+
+impl SettingsWindow {
+    fn render_general_tab(&mut self, ui: &mut egui::Ui) {
+        ui.vertical(|ui| {
+            ui.label(
+                egui::RichText::new("⚙  GLOBAL CONFIGURATION")
+                    .color(egui::Color32::from_rgb(0x4c, 0xc9, 0xf0))
+                    .font(egui::FontId::proportional(10.0))
+                    .strong()
+            );
+            ui.add_space(6.0);
+            
+            // Card
+            egui::Frame::none()
+                .fill(egui::Color32::from_rgb(0x25, 0x25, 0x40))
+                .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(0x39, 0x39, 0x52)))
+                .rounding(4.0)
+                .inner_margin(egui::Margin { left: 12.0, right: 12.0, top: 12.0, bottom: 12.0 })
+                .show(ui, |ui| {
+                    ui.vertical(|ui| {
+                        // Polling Interval title + current badge
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Polling Interval").color(egui::Color32::WHITE).font(egui::FontId::proportional(13.0)));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                let text = format!("{}s", self.config.polling_interval_secs);
+                                let (badge_rect, _) = ui.allocate_exact_size(egui::vec2(40.0, 18.0), egui::Sense::hover());
+                                ui.painter().rect_filled(badge_rect, 4.0, egui::Color32::from_rgb(0x1a, 0x1a, 0x2e));
+                                ui.painter().text(
+                                    badge_rect.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    &text,
+                                    egui::FontId::monospace(10.0),
+                                    egui::Color32::from_rgb(0x4c, 0xc9, 0xf0)
+                                );
+                            });
+                        });
+                        ui.add_space(4.0);
+                        
+                        // Slider
+                        ui.scope(|ui| {
+                            ui.visuals_mut().widgets.inactive.bg_fill = egui::Color32::from_rgb(0x39, 0x39, 0x52);
+                            ui.visuals_mut().widgets.inactive.fg_stroke = egui::Stroke::new(2.0, egui::Color32::from_rgb(0x4c, 0xc9, 0xf0));
+                            ui.spacing_mut().slider_width = ui.available_width() - 8.0;
+                            ui.add(egui::Slider::new(&mut self.config.polling_interval_secs, 1..=60).show_value(false).trailing_fill(true));
+                        });
+                        
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("1s").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                ui.label(egui::RichText::new("60s").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)));
+                            });
+                        });
+                        
+                        ui.add_space(10.0);
+                        ui.separator();
+                        ui.add_space(10.0);
+                        
+                        // Startup launch
+                        ui.horizontal(|ui| {
+                            ui.vertical(|ui| {
+                                ui.label(egui::RichText::new("Launch on Startup").color(egui::Color32::WHITE).font(egui::FontId::proportional(13.0)));
+                                ui.label(egui::RichText::new("Start BatStat automatically with Windows").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)).italics());
+                            });
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                let mut autostart = self.config.autostart;
+                                if toggle_ui(ui, &mut autostart).changed() {
+                                    self.config.autostart = autostart;
+                                    if let Err(e) = set_autostart(autostart) {
+                                        eprintln!("Failed to set autostart: {}", e);
+                                    }
+                                }
+                            });
+                        });
+                        
+                        ui.add_space(10.0);
+                        ui.separator();
+                        ui.add_space(10.0);
+                        
+                        // Windows Notification Alerts
+                        ui.horizontal(|ui| {
+                            ui.vertical(|ui| {
+                                ui.label(egui::RichText::new("Windows Notification Alerts").color(egui::Color32::WHITE).font(egui::FontId::proportional(13.0)));
+                                ui.label(egui::RichText::new("Show desktop alerts when battery levels are low.").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)).italics());
+                            });
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                toggle_ui(ui, &mut self.config.enable_notifications);
+                            });
+                        });
+
+                        ui.add_space(10.0);
+                        ui.separator();
+                        ui.add_space(10.0);
+
+                        // Show Percentage in Tray
+                        ui.horizontal(|ui| {
+                            ui.vertical(|ui| {
+                                ui.label(egui::RichText::new("Show Percentage in Tray").color(egui::Color32::WHITE).font(egui::FontId::proportional(13.0)));
+                                ui.label(egui::RichText::new("Display a device's battery level in the system tray instead of the default icon.").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)).italics());
+                            });
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                let current_val = self.config.tray_battery_channel.clone();
+                                let available_channels = get_available_channels(&self.config);
+                                
+                                let selected_text = if let Some(ref val) = current_val {
+                                    available_channels.iter()
+                                        .find(|(id, _)| id == val)
+                                        .map(|(_, name)| name.clone())
+                                        .unwrap_or_else(|| "No".to_string())
+                                } else {
+                                    "No".to_string()
+                                };
+                                
+                                egui::ComboBox::new("tray_percentage_combo", "")
+                                    .selected_text(selected_text)
+                                    .width(160.0)
+                                    .show_ui(ui, |ui| {
+                                        let is_none = current_val.is_none();
+                                        if ui.selectable_label(is_none, "No").clicked() {
+                                            self.config.tray_battery_channel = None;
+                                        }
+                                        for (id, name) in &available_channels {
+                                            let is_selected = current_val.as_ref() == Some(id);
+                                            if ui.selectable_label(is_selected, name).clicked() {
+                                                self.config.tray_battery_channel = Some(id.clone());
+                                            }
+                                        }
+                                    });
+                            });
+                        });
+
+                        ui.add_space(10.0);
+                        ui.separator();
+                        ui.add_space(10.0);
+
+                        // Debug Logging
+                        ui.horizontal(|ui| {
+                            ui.vertical(|ui| {
+                                ui.label(egui::RichText::new("Debug Logging").color(egui::Color32::WHITE).font(egui::FontId::proportional(13.0)));
+                                ui.label(egui::RichText::new("Write detailed diagnostic logs to debug.log.").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)).italics());
+                            });
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                toggle_ui(ui, &mut self.config.enable_debug_logging);
+                            });
+                        });
+
+                        ui.add_space(10.0);
+                        ui.separator();
+                        ui.add_space(10.0);
+
+                        // Custom Icons Folder Shortcut
+                        ui.horizontal(|ui| {
+                            ui.vertical(|ui| {
+                                ui.label(egui::RichText::new("Custom Icons Folder").color(egui::Color32::WHITE).font(egui::FontId::proportional(13.0)));
+                                ui.label(egui::RichText::new("Open directory where custom low battery icons are stored.").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)).italics());
+                            });
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                let btn = egui::Button::new(
+                                    egui::RichText::new("📁 Open Folder")
+                                        .color(egui::Color32::WHITE)
+                                        .font(egui::FontId::proportional(11.0))
+                                        .strong()
+                                ).fill(egui::Color32::from_rgb(0x2c, 0x2c, 0x4d)).rounding(4.0);
+
+                                if ui.add(btn).clicked() {
+                                    if let Some(dir) = crate::config::get_icons_dir_path() {
+                                        let _ = std::process::Command::new("explorer").arg(dir).spawn();
+                                    }
+                                }
+                            });
+                        });
+
+                        ui.add_space(10.0);
+                        ui.separator();
+                        ui.add_space(10.0);
+
+                        // Software Updates Section
+                        ui.horizontal(|ui| {
+                            ui.vertical(|ui| {
+                                ui.label(egui::RichText::new("Software Updates").color(egui::Color32::WHITE).font(egui::FontId::proportional(13.0)));
+                                
+                                match &self.update_status {
+                                    crate::UpdateStatus::Idle => {
+                                        ui.label(egui::RichText::new(format!("Current version: v{}", env!("CARGO_PKG_VERSION"))).color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)).italics());
+                                    }
+                                    crate::UpdateStatus::Checking => {
+                                        ui.label(egui::RichText::new("Checking for updates...").color(egui::Color32::from_rgb(0x4c, 0xc9, 0xf0)).font(egui::FontId::proportional(9.0)).italics());
+                                    }
+                                    crate::UpdateStatus::Available(info) => {
+                                        ui.label(egui::RichText::new(format!("Update available: {}", info.tag_name)).color(egui::Color32::from_rgb(0x00, 0xe6, 0x76)).font(egui::FontId::proportional(9.0)).strong());
+                                    }
+                                    crate::UpdateStatus::NoUpdate => {
+                                        ui.label(egui::RichText::new("You are running the latest version.").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)).italics());
+                                    }
+                                    crate::UpdateStatus::Downloading(progress) => {
+                                        ui.label(egui::RichText::new(format!("Downloading update: {:.0}%", progress * 100.0)).color(egui::Color32::from_rgb(0x4c, 0xc9, 0xf0)).font(egui::FontId::proportional(9.0)).strong());
+                                    }
+                                    crate::UpdateStatus::ReadyToInstall(_) => {
+                                        ui.label(egui::RichText::new("Ready to install.").color(egui::Color32::from_rgb(0x00, 0xe6, 0x76)).font(egui::FontId::proportional(9.0)).strong());
+                                    }
+                                    crate::UpdateStatus::Error(e) => {
+                                        ui.label(egui::RichText::new(format!("Error: {}", e)).color(egui::Color32::from_rgb(0xda, 0x1e, 0x28)).font(egui::FontId::proportional(9.0)).italics());
+                                    }
+                                }
+                            });
+                            
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                match &self.update_status {
+                                    crate::UpdateStatus::Available(info) => {
+                                        let msi_asset = info.assets.iter().find(|a| a.name.ends_with(".msi"));
+                                        if let Some(asset) = msi_asset {
+                                            let btn = egui::Button::new(
+                                                egui::RichText::new("💾 Update Now")
+                                                    .color(egui::Color32::from_rgb(0x16, 0x16, 0x16))
+                                                    .font(egui::FontId::proportional(11.0))
+                                                    .strong()
+                                            ).fill(egui::Color32::from_rgb(0x00, 0xe6, 0x76)).rounding(4.0);
+                                            
+                                            if ui.add(btn).clicked() {
+                                                self.request_download_install = Some(asset.browser_download_url.clone());
+                                            }
+                                        } else {
+                                            let btn = egui::Button::new(
+                                                egui::RichText::new("🌐 View Releases")
+                                                    .color(egui::Color32::WHITE)
+                                                    .font(egui::FontId::proportional(11.0))
+                                                    .strong()
+                                            ).fill(egui::Color32::from_rgb(0x2c, 0x2c, 0x4d)).rounding(4.0);
+                                            
+                                            if ui.add(btn).clicked() {
+                                                let _ = std::process::Command::new("explorer").arg("https://github.com/SGiehler/BatStat/releases").spawn();
+                                            }
+                                        }
+                                    }
+                                    crate::UpdateStatus::Downloading(_) => {
+                                        let _ = ui.add_enabled(false, egui::Button::new(
+                                            egui::RichText::new("⏳ Downloading...")
+                                                .font(egui::FontId::proportional(11.0))
+                                                .strong()
+                                        ).rounding(4.0));
+                                    }
+                                    crate::UpdateStatus::Checking => {
+                                        let _ = ui.add_enabled(false, egui::Button::new(
+                                            egui::RichText::new("🔄 Checking...")
+                                                .font(egui::FontId::proportional(11.0))
+                                                .strong()
+                                        ).rounding(4.0));
+                                    }
+                                    _ => {
+                                        let btn = egui::Button::new(
+                                            egui::RichText::new("🔄 Check Updates")
+                                                .color(egui::Color32::WHITE)
+                                                .font(egui::FontId::proportional(11.0))
+                                                .strong()
+                                        ).fill(egui::Color32::from_rgb(0x2c, 0x2c, 0x4d)).rounding(4.0);
+                                        
+                                        if ui.add(btn).clicked() {
+                                            self.request_update_check = true;
+                                        }
+                                    }
+                                }
+                            });
+                        });
+                    });
+                });
+        });
+    }
+
+    fn render_devices_tab(&mut self, ui: &mut egui::Ui) {
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("📱  CONNECTED PERIPHERALS")
+                        .color(egui::Color32::from_rgb(0x4c, 0xc9, 0xf0))
+                        .font(egui::FontId::proportional(10.0))
+                        .strong()
+                );
+                
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let btn = egui::Button::new(
+                        egui::RichText::new("🔄 Detect Devices")
+                            .color(egui::Color32::WHITE)
+                            .font(egui::FontId::proportional(10.0))
+                            .strong()
+                    ).fill(egui::Color32::from_rgb(0x2c, 0x2c, 0x4d)).rounding(4.0);
+                    
+                    if ui.add(btn).clicked() {
+                        self.request_poll = true;
+                    }
+                });
+            });
+            ui.add_space(6.0);
+            
+            let mut to_remove = None;
+            
+            for (idx, dev) in self.config.devices.iter_mut().enumerate() {
+                let is_active = self.active_devices.contains(&dev.unique_id);
+                
+                // Render card
+                egui::Frame::none()
+                    .fill(egui::Color32::from_rgb(0x25, 0x25, 0x40))
+                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(0x39, 0x39, 0x52)))
+                    .rounding(4.0)
+                    .inner_margin(egui::Margin { left: 12.0, right: 12.0, top: 12.0, bottom: 12.0 })
+                    .show(ui, |ui| {
+                        ui.vertical(|ui| {
+                            // Row 1: Type badge + Name/Status + Enabled checkbox
+                            ui.horizontal(|ui| {
+                                // Type badge (standard letters, 100% robust rendering)
+                                let tag = if dev.unique_id.starts_with("pulsar_") || dev.unique_id.starts_with("logitech_") {
+                                    "MOUSE"
+                                } else if dev.unique_id.starts_with("xbox_") {
+                                    "GAMEPAD"
+                                } else if dev.unique_id.starts_with("gamebuds") {
+                                    "BUDS"
+                                } else if dev.unique_id.starts_with("keyboard") || dev.unique_id.contains("keyboard") {
+                                    "KEYBOARD"
+                                } else {
+                                    "DEV"
+                                };
+                                
+                                let (tag_rect, _) = ui.allocate_exact_size(egui::vec2(52.0, 20.0), egui::Sense::hover());
+                                ui.painter().rect_filled(tag_rect, 4.0, egui::Color32::from_rgb(0x1a, 0x1a, 0x2e));
+                                ui.painter().rect_stroke(tag_rect, 4.0, egui::Stroke::new(1.0, egui::Color32::from_rgb(0x39, 0x39, 0x52)));
+                                ui.painter().text(
+                                    tag_rect.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    tag,
+                                    egui::FontId::proportional(9.0),
+                                    egui::Color32::from_rgb(0x4c, 0xc9, 0xf0) // Electric Blue text
+                                );
+                                
+                                ui.add_space(6.0);
+                                
+                                // Title and status dot with battery levels
+                                ui.vertical(|ui| {
+                                    ui.label(egui::RichText::new(&dev.name).color(egui::Color32::WHITE).font(egui::FontId::proportional(13.0)).strong());
+                                    
+                                    ui.horizontal(|ui| {
+                                        if let Some(status) = self.device_statuses.get(&dev.unique_id) {
+                                            match status {
+                                                DeviceBatteryStatus::Online { channels } => {
+                                                    let active_channels: Vec<&BatteryChannel> = channels.iter().flatten().collect();
+                                                    if active_channels.is_empty() {
+                                                        let dot_color = egui::Color32::from_rgb(0x8d, 0x8d, 0x8d);
+                                                        let (rect, _) = ui.allocate_exact_size(egui::vec2(6.0, 6.0), egui::Sense::hover());
+                                                        ui.painter().circle_filled(rect.center(), 3.0, dot_color);
+                                                        ui.label(egui::RichText::new("DISCONNECTED").color(dot_color).font(egui::FontId::proportional(10.0)).strong());
+                                                    } else {
+                                                        let dot_color = egui::Color32::from_rgb(0x00, 0xe6, 0x76);
+                                                        let (rect, _) = ui.allocate_exact_size(egui::vec2(6.0, 6.0), egui::Sense::hover());
+                                                        ui.painter().circle_filled(rect.center(), 3.0, dot_color);
+                                                        
+                                                        for (c_idx, chan) in active_channels.iter().enumerate() {
+                                                            if c_idx > 0 {
+                                                                ui.label(egui::RichText::new("|").color(egui::Color32::from_rgb(0x39, 0x39, 0x52)));
+                                                            }
+                                                            let prefix = match chan.channel_type {
+                                                                ChannelType::Main => "",
+                                                                ChannelType::Left => "L: ",
+                                                                ChannelType::Right => "R: ",
+                                                                ChannelType::Case => "Case: ",
+                                                            };
+                                                            let chan_str = format!("{}{}%{}", prefix, chan.percentage, if chan.charging { " ⚡" } else { "" });
+                                                            ui.label(egui::RichText::new(chan_str).color(dot_color).font(egui::FontId::proportional(10.0)).strong());
+                                                        }
+                                                    }
+                                                }
+                                                DeviceBatteryStatus::Offline => {
+                                                    let dot_color = egui::Color32::from_rgb(0x8d, 0x8d, 0x8d);
+                                                    let (rect, _) = ui.allocate_exact_size(egui::vec2(6.0, 6.0), egui::Sense::hover());
+                                                    ui.painter().circle_filled(rect.center(), 3.0, dot_color);
+                                                    ui.label(egui::RichText::new("DISCONNECTED").color(dot_color).font(egui::FontId::proportional(10.0)).strong());
+                                                }
+                                            }
+                                        } else {
+                                            let dot_color = egui::Color32::from_rgb(0x8d, 0x8d, 0x8d);
+                                            let (rect, _) = ui.allocate_exact_size(egui::vec2(6.0, 6.0), egui::Sense::hover());
+                                            ui.painter().circle_filled(rect.center(), 3.0, dot_color);
+                                            ui.label(egui::RichText::new("DISCONNECTED").color(dot_color).font(egui::FontId::proportional(10.0)).strong());
+                                        }
+                                    });
+                                });
+                                
+                                // Enabled toggle
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    ui.checkbox(&mut dev.enabled, "");
+                                    ui.label(egui::RichText::new("Enabled").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(10.0)));
+                                });
+                            });
+                            
+                            ui.add_space(6.0);
+                            ui.separator();
+                            ui.add_space(6.0);
+                            
+                            // Row 2: Custom Low Icon
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("LOW BATTERY ICON").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(9.0)).strong());
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    // Reset button
+                                    if dev.low_battery_icon_path.is_some() {
+                                        if ui.button(egui::RichText::new("Reset").font(egui::FontId::proportional(10.0))).clicked() {
+                                            dev.low_battery_icon_path = None;
+                                        }
+                                    }
+                                    
+                                    // Dropdown combo box
+                                    let available_icons = crate::config::get_icon_list();
+                                    let current_selected = dev.low_battery_icon_path.as_deref().unwrap_or("Default");
+                                    
+                                    let default_icon_name = if dev.unique_id.starts_with("pulsar_") || dev.unique_id.starts_with("logitech_") {
+                                        "low_mouse.png"
+                                    } else if dev.unique_id.starts_with("xbox_") {
+                                        "low_gamepad.png"
+                                    } else if dev.unique_id.starts_with("gamebuds") {
+                                        "low_buds.png"
+                                    } else if dev.unique_id.starts_with("keyboard") || dev.unique_id.contains("keyboard") {
+                                        "low_keyboard.png"
+                                    } else {
+                                        "ok.png"
+                                    };
+                                    let preview_icon_name = dev.low_battery_icon_path.clone().unwrap_or_else(|| default_icon_name.to_string());
+                                    
+                                    egui::ComboBox::new(format!("icon_combo_{}", dev.unique_id), "")
+                                        .selected_text(current_selected)
+                                        .width(160.0)
+                                        .show_ui(ui, |ui| {
+                                            // Default selection
+                                            {
+                                                let is_default = dev.low_battery_icon_path.is_none();
+                                                let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 20.0), egui::Sense::click());
+                                                if response.clicked() {
+                                                    dev.low_battery_icon_path = None;
+                                                }
+                                                let visual = ui.style().interact(&response);
+                                                if is_default || response.hovered() {
+                                                    ui.painter().rect_filled(rect, 2.0, visual.bg_fill);
+                                                }
+                                                let image_rect = egui::Rect::from_min_size(rect.min + egui::vec2(4.0, 2.0), egui::vec2(16.0, 16.0));
+                                                let text_pos = rect.min + egui::vec2(24.0, 4.0);
+                                                if let Some(texture) = self.icon_textures.get(default_icon_name) {
+                                                    ui.painter().image(texture.id(), image_rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
+                                                }
+                                                ui.painter().text(text_pos, egui::Align2::LEFT_TOP, "Default", egui::FontId::proportional(11.0), visual.fg_stroke.color);
+                                            }
+                                            
+                                            // Custom options selection
+                                            for icon_name in &available_icons {
+                                                let is_selected = dev.low_battery_icon_path.as_deref() == Some(icon_name);
+                                                let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 20.0), egui::Sense::click());
+                                                if response.clicked() {
+                                                    dev.low_battery_icon_path = Some(icon_name.clone());
+                                                }
+                                                let visual = ui.style().interact(&response);
+                                                if is_selected || response.hovered() {
+                                                    ui.painter().rect_filled(rect, 2.0, visual.bg_fill);
+                                                }
+                                                let image_rect = egui::Rect::from_min_size(rect.min + egui::vec2(4.0, 2.0), egui::vec2(16.0, 16.0));
+                                                let text_pos = rect.min + egui::vec2(24.0, 4.0);
+                                                if let Some(texture) = self.icon_textures.get(icon_name) {
+                                                    ui.painter().image(texture.id(), image_rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
+                                                }
+                                                ui.painter().text(text_pos, egui::Align2::LEFT_TOP, icon_name, egui::FontId::proportional(11.0), visual.fg_stroke.color);
+                                            }
+                                        });
+                                    
+                                    // Show preview next to the combobox
+                                    if let Some(texture) = self.icon_textures.get(&preview_icon_name) {
+                                        ui.image((texture.id(), egui::vec2(20.0, 20.0)));
+                                        ui.add_space(4.0);
+                                    }
+                                });
+                            });
+                            
+                            ui.add_space(6.0);
+                            
+                            // Row 3: Alert Threshold Slider
+                            ui.vertical(|ui| {
+                                ui.horizontal(|ui| {
+                                    ui.label(egui::RichText::new("Alert Threshold").color(egui::Color32::from_rgb(0x8d, 0x8d, 0x8d)).font(egui::FontId::proportional(11.0)));
+                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                        ui.label(egui::RichText::new(format!("{}%", dev.threshold)).color(egui::Color32::from_rgb(0x4c, 0xc9, 0xf0)).font(egui::FontId::monospace(11.0)).strong());
+                                    });
+                                });
+                                ui.add_space(2.0);
+                                ui.scope(|ui| {
+                                    ui.visuals_mut().widgets.inactive.bg_fill = egui::Color32::from_rgb(0x39, 0x39, 0x52);
+                                    ui.visuals_mut().widgets.inactive.fg_stroke = egui::Stroke::new(2.0, egui::Color32::from_rgb(0x4c, 0xc9, 0xf0));
+                                    ui.spacing_mut().slider_width = ui.available_width() - 8.0;
+                                    ui.add(egui::Slider::new(&mut dev.threshold, 5..=95).show_value(false).trailing_fill(true));
+                                });
+                            });
+                            
+                            // Row 4: Remove Button (only shown for offline/disconnected devices)
+                            if !is_active {
+                                ui.add_space(4.0);
+                                ui.horizontal(|ui| {
+                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                        let remove_btn = egui::Button::new(
+                                            egui::RichText::new("🗑 Remove Device")
+                                                .color(egui::Color32::from_rgb(0xda, 0x1e, 0x28)) // error red
+                                                .font(egui::FontId::proportional(10.0))
+                                        ).fill(egui::Color32::TRANSPARENT);
+                                        
+                                        if ui.add(remove_btn).clicked() {
+                                            to_remove = Some(idx);
+                                        }
+                                    });
+                                });
+                            }
+                        });
+                    });
+                ui.add_space(10.0);
+            }
+            
+            if let Some(idx) = to_remove {
+                self.config.devices.remove(idx);
+                self.device_removed = true;
+            }
+        });
+    }
+}
+
+fn get_available_channels(config: &AppConfig) -> Vec<(String, String)> {
+    let mut options = Vec::new();
+    for dev in &config.devices {
+        if dev.unique_id.starts_with("gamebuds") {
+            options.push((format!("{}:Left", dev.unique_id), format!("{} (Left)", dev.name)));
+            options.push((format!("{}:Right", dev.unique_id), format!("{} (Right)", dev.name)));
+        } else {
+            options.push((format!("{}:Main", dev.unique_id), dev.name.clone()));
+        }
+    }
+    options
 }

@@ -19,6 +19,8 @@ pub struct AppConfig {
     pub enable_notifications: bool,
     #[serde(default)]
     pub enable_debug_logging: bool,
+    #[serde(default)]
+    pub tray_battery_channel: Option<String>,
     pub devices: Vec<DeviceConfig>,
 }
 
@@ -33,6 +35,7 @@ impl Default for AppConfig {
             autostart: false,
             enable_notifications: true,
             enable_debug_logging: false,
+            tray_battery_channel: None,
             devices: Vec::new(),
         }
     }
