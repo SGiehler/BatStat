@@ -11,13 +11,14 @@ impl DevicePlugin for SteelSeriesPlugin {
         let mut instances: Vec<Box<dyn DeviceInstance>> = Vec::new();
         if let Some(api) = api {
             for dev_info in api.device_list() {
-                if dev_info.vendor_id() == STEELSERIES_VENDOR_ID && dev_info.product_id() == GAMEBUDS_PID {
-                    if dev_info.usage_page() == 0xffc0 || dev_info.interface_number() == 3 {
-                        let path = dev_info.path().to_owned();
-                        // Return a single unified GameBuds instance
-                        instances.push(Box::new(GameBudsInstance { path }));
-                        break; // Only need one instance since it's path-independent and queries both ears
-                    }
+                if dev_info.vendor_id() == STEELSERIES_VENDOR_ID
+                    && dev_info.product_id() == GAMEBUDS_PID
+                    && (dev_info.usage_page() == 0xffc0 || dev_info.interface_number() == 3)
+                {
+                    let path = dev_info.path().to_owned();
+                    // Return a single unified GameBuds instance
+                    instances.push(Box::new(GameBudsInstance { path }));
+                    break; // Only need one instance since it's path-independent and queries both ears
                 }
             }
         }

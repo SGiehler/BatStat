@@ -23,8 +23,8 @@ fn calculate_pulsar_percentage(voltage: u16, charging: bool) -> u8 {
         s = if charging { 99.0 } else { 100.0 };
     } else {
         let mut a = None;
-        for n in 0..W.len() {
-            if voltage <= W[n] {
+        for (n, &val) in W.iter().enumerate() {
+            if voltage <= val {
                 a = Some(n);
                 break;
             }

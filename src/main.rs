@@ -77,16 +77,13 @@ fn load_icon_from_file(path: &str) -> Result<tray_icon::Icon, String> {
 }
 
 fn get_default_low_icon(dev: &crate::config::DeviceConfig) -> tray_icon::Icon {
-    if dev.unique_id.starts_with("pulsar_") || dev.unique_id.starts_with("logitech_") {
-        load_icon_from_memory(include_bytes!("icons/low_mouse.png"))
-    } else if dev.unique_id.starts_with("xbox_") {
-        load_icon_from_memory(include_bytes!("icons/low_gamepad.png"))
-    } else if dev.unique_id.starts_with("gamebuds") {
-        load_icon_from_memory(include_bytes!("icons/low_buds.png"))
-    } else if dev.unique_id.starts_with("keyboard") || dev.unique_id.contains("keyboard") {
-        load_icon_from_memory(include_bytes!("icons/low_keyboard.png"))
-    } else {
-        load_icon_from_memory(include_bytes!("icons/ok.png")) // fallback
+    let (_, _, _, base) = crate::ui::get_device_category(&dev.unique_id);
+    match base {
+        "mouse" => load_icon_from_memory(include_bytes!("icons/low_mouse.png")),
+        "gamepad" => load_icon_from_memory(include_bytes!("icons/low_gamepad.png")),
+        "buds" => load_icon_from_memory(include_bytes!("icons/low_buds.png")),
+        "keyboard" => load_icon_from_memory(include_bytes!("icons/low_keyboard.png")),
+        _ => load_icon_from_memory(include_bytes!("icons/ok.png")),
     }
 }
 
@@ -130,14 +127,13 @@ fn render_percentage_icon(pct: u8, charging: bool, threshold: u8) -> tray_icon::
 
     let mut draw_digit = |digit: usize, x_offset: i32, y_offset: i32, r: u8, g: u8, b: u8, a: u8| {
         let font_data = FONT_4X7[digit];
-        for row in 0..7 {
-            let val = font_data[row];
+        for (row, &val) in font_data.iter().enumerate() {
             for col in 0..4 {
                 let bit = (val >> (3 - col)) & 1;
                 if bit == 1 {
-                    let px = x_offset + col as i32;
+                    let px = x_offset + col;
                     let py = y_offset + row as i32;
-                    if px >= 0 && px < 16 && py >= 0 && py < 16 {
+                    if (0..16).contains(&px) && (0..16).contains(&py) {
                         let idx = ((py * 16 + px) * 4) as usize;
                         pixels[idx] = r;
                         pixels[idx + 1] = g;
@@ -312,35 +308,33 @@ fn update_tray_icon_and_menu_local(
     let mut has_devices = false;
 
     for id in &s.active_device_ids {
-        if let Some(status) = s.device_statuses.get(id) {
-            if let DeviceBatteryStatus::Online { channels } = status {
-                let active_channels: Vec<&crate::plugins::BatteryChannel> = channels.iter().flatten().collect();
-                if !active_channels.is_empty() {
-                    let dev_name = s.config.devices.iter()
-                        .find(|d| &d.unique_id == id)
-                        .map(|d| d.name.as_str())
-                        .unwrap_or(id.as_str());
+        if let Some(DeviceBatteryStatus::Online { channels }) = s.device_statuses.get(id) {
+            let active_channels: Vec<&crate::plugins::BatteryChannel> = channels.iter().flatten().collect();
+            if !active_channels.is_empty() {
+                let dev_name = s.config.devices.iter()
+                    .find(|d| &d.unique_id == id)
+                    .map(|d| d.name.as_str())
+                    .unwrap_or(id.as_str());
 
-                    let mut chan_parts = Vec::new();
-                    for chan in active_channels {
-                        let prefix = match chan.channel_type {
-                            crate::plugins::ChannelType::Main => "",
-                            crate::plugins::ChannelType::Left => "L: ",
-                            crate::plugins::ChannelType::Right => "R: ",
-                            crate::plugins::ChannelType::Case => "Case: ",
-                        };
-                        let charging_suffix = if chan.charging { "⚡" } else { "" };
-                        chan_parts.push(format!("{}{}%{}", prefix, chan.percentage, charging_suffix));
-                    }
-
-                    let channels_str = chan_parts.join(" | ");
-                    let item_text = format!("{}: {}", dev_name, channels_str);
-                    let truncated_text = truncate_string(&item_text, 32);
-
-                    let item = MenuItem::new(truncated_text, false, None);
-                    let _ = new_menu.append(&item);
-                    has_devices = true;
+                let mut chan_parts = Vec::new();
+                for chan in active_channels {
+                    let prefix = match chan.channel_type {
+                        crate::plugins::ChannelType::Main => "",
+                        crate::plugins::ChannelType::Left => "L: ",
+                        crate::plugins::ChannelType::Right => "R: ",
+                        crate::plugins::ChannelType::Case => "Case: ",
+                    };
+                    let charging_suffix = if chan.charging { " [CHG]" } else { "" };
+                    chan_parts.push(format!("{}{}%{}", prefix, chan.percentage, charging_suffix));
                 }
+
+                let channels_str = chan_parts.join(" | ");
+                let item_text = format!("{}: {}", dev_name, channels_str);
+                let truncated_text = truncate_string(&item_text, 32);
+
+                let item = MenuItem::new(truncated_text, false, None);
+                let _ = new_menu.append(&item);
+                has_devices = true;
             }
         }
     }
@@ -350,7 +344,7 @@ fn update_tray_icon_and_menu_local(
     }
 
     let _ = new_menu.append_items(&[settings_item, exit_item]);
-    let _ = tray.set_menu(Some(Box::new(new_menu)));
+    tray.set_menu(Some(Box::new(new_menu)));
 }
 
 fn truncate_string(s: &str, max_len: usize) -> String {
@@ -457,13 +451,20 @@ impl eframe::App for BatStatApp {
             )
         };
 
-        if ctx.input(|i| i.viewport().close_requested()) {
-            if has_tray {
-                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-                self.visible = false;
-                self.ui_state = None;
-                hide_settings_window();
+        if ctx.input(|i| i.viewport().close_requested()) && has_tray {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            if let Some(ref ui_state) = self.ui_state {
+                if ui_state.has_unsaved_changes() && !ui_state.discard_changes {
+                    let mut s = self.state.lock().unwrap();
+                    s.config = ui_state.config.clone();
+                    ENABLE_DEBUG_LOG.store(s.config.enable_debug_logging, std::sync::atomic::Ordering::Relaxed);
+                    let _ = crate::config::save_config(&s.config);
+                }
             }
+            self.visible = false;
+            self.ui_state = None;
+            hide_settings_window();
+            request_tray_update(&self.state);
         }
 
         if self.first_frame {
@@ -528,18 +529,15 @@ impl eframe::App for BatStatApp {
             queue.drain(..).collect()
         };
         for event in tray_events {
-            match event {
-                TrayIconEvent::DoubleClick { .. } => {
-                    self.visible = true;
-                    let (config, active_ids, statuses) = {
-                        let s = self.state.lock().unwrap();
-                        (s.config.clone(), s.active_device_ids.clone(), s.device_statuses.clone())
-                    };
-                    self.ui_state = Some(crate::ui::SettingsWindow::new(config, active_ids, statuses));
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
-                }
-                _ => {}
+            if let TrayIconEvent::DoubleClick { .. } = event {
+                self.visible = true;
+                let (config, active_ids, statuses) = {
+                    let s = self.state.lock().unwrap();
+                    (s.config.clone(), s.active_device_ids.clone(), s.device_statuses.clone())
+                };
+                self.ui_state = Some(crate::ui::SettingsWindow::new(config, active_ids, statuses));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
             }
         }
 
@@ -553,7 +551,15 @@ impl eframe::App for BatStatApp {
                     if ui_state.device_removed {
                         s.config = ui_state.config.clone();
                         let _ = crate::config::save_config(&s.config);
+                        ui_state.original_config = ui_state.config.clone();
                         ui_state.device_removed = false;
+                        needs_tray_update = true;
+                    }
+
+                    if ui_state.config_saved_in_place {
+                        ui_state.config_saved_in_place = false;
+                        s.config = ui_state.config.clone();
+                        ENABLE_DEBUG_LOG.store(s.config.enable_debug_logging, std::sync::atomic::Ordering::Relaxed);
                         needs_tray_update = true;
                     }
                     
@@ -612,6 +618,7 @@ impl eframe::App for BatStatApp {
                     for dev in &s.config.devices {
                         if !ui_state.config.devices.iter().any(|d| d.unique_id == dev.unique_id) {
                             ui_state.config.devices.push(dev.clone());
+                            ui_state.original_config.devices.push(dev.clone());
                         }
                     }
                     
@@ -619,17 +626,23 @@ impl eframe::App for BatStatApp {
                         s.request_poll = true;
                         ui_state.request_poll = false;
                     }
+
+                    if ui_state.request_test_notification {
+                        ui_state.request_test_notification = false;
+                        trigger_notification("BatStat Battery Monitor", 15);
+                    }
                 }
                 if needs_tray_update {
                     request_tray_update(&self.state);
                 }
                 ui_state.update(ctx, frame);
                 if ui_state.request_close {
-                    // Sync main config from UI
-                    {
+                    // Sync main config from UI if not discarded (e.g. Cancel clicked or Esc pressed)
+                    if !ui_state.discard_changes {
                         let mut s = self.state.lock().unwrap();
                         s.config = ui_state.config.clone();
                         ENABLE_DEBUG_LOG.store(s.config.enable_debug_logging, std::sync::atomic::Ordering::Relaxed);
+                        let _ = crate::config::save_config(&s.config);
                     }
                     if !has_tray {
                         // In fallback mode, closing the window exits the app
@@ -1031,12 +1044,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Run eframe Native UI Event Loop
+    let app_icon = image::load_from_memory(include_bytes!("icons/ok.png")).ok().map(|img| {
+        let rgba = img.to_rgba8();
+        let (width, height) = rgba.dimensions();
+        std::sync::Arc::new(egui::IconData {
+            rgba: rgba.into_raw(),
+            width,
+            height,
+        })
+    });
+
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_title("BatStat Settings")
+        .with_inner_size([760.0, 720.0])
+        .with_min_inner_size([620.0, 520.0])
+        .with_resizable(true);
+
+    if let Some(icon) = app_icon {
+        viewport = viewport.with_icon(icon);
+    }
+
     let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("BatStat Settings")
-            .with_inner_size([720.0, 700.0])
-            .with_min_inner_size([600.0, 500.0])
-            .with_resizable(true),
+        viewport,
         ..Default::default()
     };
 
