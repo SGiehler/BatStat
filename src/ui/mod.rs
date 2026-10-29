@@ -1,3 +1,6 @@
+pub mod theme;
+pub mod widgets;
+
 use crate::config::{AppConfig, DeviceConfig, save_config};
 use crate::autostart::set_autostart;
 use crate::plugins::{DeviceBatteryStatus, BatteryChannel, ChannelType};
@@ -6,7 +9,7 @@ use std::time::{Duration, Instant};
 
 /// Pro Dark Desktop Design System (Windows 11 Fluent / Linear Dark Zinc)
 #[allow(dead_code)]
-pub mod theme {
+mod legacy_theme {
     use eframe::egui::Color32;
 
     // Base Surfaces
@@ -48,6 +51,7 @@ pub mod theme {
     pub const STATUS_LOW_ALERT_BG: Color32 = Color32::from_rgb(34, 20, 22);
     pub const STATUS_OFFLINE: Color32 = Color32::from_rgb(113, 113, 122);   // #71717a Muted Zinc
 }
+use legacy_theme as ltheme;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
@@ -198,11 +202,11 @@ impl SettingsWindow {
 
         // Built-in defaults as guaranteed fallback
         let builtins: [(&str, &[u8]); 5] = [
-            ("ok.png", include_bytes!("icons/ok.png")),
-            ("low_mouse.png", include_bytes!("icons/low_mouse.png")),
-            ("low_gamepad.png", include_bytes!("icons/low_gamepad.png")),
-            ("low_buds.png", include_bytes!("icons/low_buds.png")),
-            ("low_keyboard.png", include_bytes!("icons/low_keyboard.png")),
+            ("ok.png", include_bytes!("../icons/ok.png")),
+            ("low_mouse.png", include_bytes!("../icons/low_mouse.png")),
+            ("low_gamepad.png", include_bytes!("../icons/low_gamepad.png")),
+            ("low_buds.png", include_bytes!("../icons/low_buds.png")),
+            ("low_keyboard.png", include_bytes!("../icons/low_keyboard.png")),
         ];
 
         for (name, bytes) in builtins {
@@ -398,7 +402,7 @@ pub fn toggle_ui(ui: &mut egui::Ui, on: &mut bool) -> egui::Response {
         let how_on = ui.ctx().animate_bool(response.id, *on);
 
         let track_color = if *on {
-            theme::STATUS_ONLINE // Mature emerald green active state
+            ltheme::STATUS_ONLINE // Mature emerald green active state
         } else {
             egui::Color32::from_rgb(44, 44, 52) // Dark zinc track
         };
@@ -410,7 +414,7 @@ pub fn toggle_ui(ui: &mut egui::Ui, on: &mut bool) -> egui::Response {
             ui.painter().rect_stroke(
                 rect,
                 rounding,
-                egui::Stroke::new(1.0, theme::BORDER_HOVER),
+                egui::Stroke::new(1.0, ltheme::BORDER_HOVER),
             );
         }
 
@@ -442,21 +446,21 @@ pub fn battery_bar_ui(
         let rounding = egui::Rounding::same(6.0);
 
         // Recessed slot background
-        painter.rect_filled(rect, rounding, theme::BG_SUBTLE);
-        painter.rect_stroke(rect, rounding, egui::Stroke::new(1.0, theme::BORDER_SUBTLE));
+        painter.rect_filled(rect, rounding, ltheme::BG_SUBTLE);
+        painter.rect_stroke(rect, rounding, egui::Stroke::new(1.0, ltheme::BORDER_SUBTLE));
 
         // Filled section
         let clamped_pct = (percentage.min(100) as f32) / 100.0;
         let fill_w = (rect.width() - 4.0) * clamped_pct;
 
         let fill_color = if charging {
-            theme::STATUS_CHARGING // Warm gold/amber
+            ltheme::STATUS_CHARGING // Warm gold/amber
         } else if percentage > 50 {
-            theme::STATUS_ONLINE // Emerald green
+            ltheme::STATUS_ONLINE // Emerald green
         } else if percentage > threshold {
-            theme::STATUS_CHARGING // Amber warning
+            ltheme::STATUS_CHARGING // Amber warning
         } else {
-            theme::STATUS_LOW_ALERT // Coral red
+            ltheme::STATUS_LOW_ALERT // Coral red
         };
 
         if fill_w > 2.0 {
@@ -520,19 +524,19 @@ fn render_stat_card(
     let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 52.0), egui::Sense::click());
 
     let bg_color = if is_selected {
-        theme::BG_TAB_ACTIVE
+        ltheme::BG_TAB_ACTIVE
     } else if response.hovered() {
-        theme::BG_CARD_HOVER
+        ltheme::BG_CARD_HOVER
     } else {
-        theme::BG_CARD
+        ltheme::BG_CARD
     };
 
     let border_stroke = if is_selected {
         egui::Stroke::new(1.5, accent)
     } else if response.hovered() {
-        egui::Stroke::new(1.0, theme::BORDER_HOVER)
+        egui::Stroke::new(1.0, ltheme::BORDER_HOVER)
     } else {
-        egui::Stroke::new(1.0, theme::BORDER_CARD)
+        egui::Stroke::new(1.0, ltheme::BORDER_CARD)
     };
 
     ui.painter().rect_filled(rect, 8.0, bg_color);
@@ -599,14 +603,14 @@ fn render_stat_card(
         egui::Align2::LEFT_TOP,
         value,
         egui::FontId::proportional(16.0),
-        theme::TEXT_PRIMARY,
+        ltheme::TEXT_PRIMARY,
     );
     ui.painter().text(
         egui::pos2(text_left, rect.top() + 31.0),
         egui::Align2::LEFT_TOP,
         label,
         egui::FontId::proportional(9.5),
-        if is_selected { accent } else { theme::TEXT_MUTED },
+        if is_selected { accent } else { ltheme::TEXT_MUTED },
     );
 
     response.on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -633,36 +637,36 @@ impl eframe::App for SettingsWindow {
 
         // Pro Dark Visual Theme Setup (Windows 11 Fluent / Linear Dark Zinc)
         let mut visuals = egui::Visuals::dark();
-        visuals.panel_fill = theme::BG_APP;
-        visuals.window_fill = theme::BG_APP;
+        visuals.panel_fill = ltheme::BG_APP;
+        visuals.window_fill = ltheme::BG_APP;
 
         // Container / Noninteractive
-        visuals.widgets.noninteractive.bg_fill = theme::BG_CARD;
-        visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, theme::BORDER_CARD);
-        visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, theme::TEXT_MUTED);
+        visuals.widgets.noninteractive.bg_fill = ltheme::BG_CARD;
+        visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, ltheme::BORDER_CARD);
+        visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(1.0, ltheme::TEXT_MUTED);
         visuals.widgets.noninteractive.rounding = egui::Rounding::same(8.0);
 
         // Inactive interactive widgets
-        visuals.widgets.inactive.bg_fill = theme::BG_CARD;
-        visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, theme::BORDER_CARD);
-        visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, theme::TEXT_SECONDARY);
+        visuals.widgets.inactive.bg_fill = ltheme::BG_CARD;
+        visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, ltheme::BORDER_CARD);
+        visuals.widgets.inactive.fg_stroke = egui::Stroke::new(1.0, ltheme::TEXT_SECONDARY);
         visuals.widgets.inactive.rounding = egui::Rounding::same(6.0);
 
         // Hover state
-        visuals.widgets.hovered.bg_fill = theme::BG_CARD_HOVER;
-        visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, theme::BORDER_HOVER);
-        visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, theme::TEXT_PRIMARY);
+        visuals.widgets.hovered.bg_fill = ltheme::BG_CARD_HOVER;
+        visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, ltheme::BORDER_HOVER);
+        visuals.widgets.hovered.fg_stroke = egui::Stroke::new(1.0, ltheme::TEXT_PRIMARY);
         visuals.widgets.hovered.rounding = egui::Rounding::same(6.0);
 
         // Active state
-        visuals.widgets.active.bg_fill = theme::BG_TAB_ACTIVE;
-        visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, theme::BORDER_FOCUS);
-        visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0, theme::TEXT_PRIMARY);
+        visuals.widgets.active.bg_fill = ltheme::BG_TAB_ACTIVE;
+        visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, ltheme::BORDER_FOCUS);
+        visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0, ltheme::TEXT_PRIMARY);
         visuals.widgets.active.rounding = egui::Rounding::same(6.0);
 
-        visuals.extreme_bg_color = theme::BG_SUBTLE;
-        visuals.selection.bg_fill = theme::BG_TAB_ACTIVE;
-        visuals.selection.stroke = egui::Stroke::new(1.0, theme::BORDER_FOCUS);
+        visuals.extreme_bg_color = ltheme::BG_SUBTLE;
+        visuals.selection.bg_fill = ltheme::BG_TAB_ACTIVE;
+        visuals.selection.stroke = egui::Stroke::new(1.0, ltheme::BORDER_FOCUS);
 
         ctx.set_visuals(visuals);
 
@@ -672,16 +676,16 @@ impl eframe::App for SettingsWindow {
         egui::TopBottomPanel::top("header_panel")
             .frame(
                 egui::Frame::none()
-                    .fill(theme::BG_HEADER)
+                    .fill(ltheme::BG_HEADER)
                     .inner_margin(egui::Margin { left: 20.0, right: 20.0, top: 12.0, bottom: 12.0 })
-                    .stroke(egui::Stroke::new(1.0, theme::BORDER_CARD)),
+                    .stroke(egui::Stroke::new(1.0, ltheme::BORDER_CARD)),
             )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     // Logo Badge (Crisp vector lightning bolt)
                     let (logo_rect, _) = ui.allocate_exact_size(egui::vec2(28.0, 28.0), egui::Sense::hover());
-                    ui.painter().rect_filled(logo_rect, 6.0, theme::BG_CARD);
-                    ui.painter().rect_stroke(logo_rect, 6.0, egui::Stroke::new(1.0, theme::BORDER_CARD));
+                    ui.painter().rect_filled(logo_rect, 6.0, ltheme::BG_CARD);
+                    ui.painter().rect_stroke(logo_rect, 6.0, egui::Stroke::new(1.0, ltheme::BORDER_CARD));
                     let bolt_center = logo_rect.center();
                     let pts = [
                         egui::pos2(bolt_center.x + 1.0, bolt_center.y - 7.0),
@@ -693,7 +697,7 @@ impl eframe::App for SettingsWindow {
                     ];
                     ui.painter().add(egui::Shape::convex_polygon(
                         pts.to_vec(),
-                        theme::STATUS_CHARGING,
+                        ltheme::STATUS_CHARGING,
                         egui::Stroke::NONE,
                     ));
 
@@ -701,20 +705,20 @@ impl eframe::App for SettingsWindow {
                     ui.label(
                         egui::RichText::new("BatStat")
                             .strong()
-                            .color(theme::TEXT_PRIMARY)
+                            .color(ltheme::TEXT_PRIMARY)
                             .font(egui::FontId::proportional(16.0)),
                     );
 
                     // Version Tag
                     let (v_rect, _) = ui.allocate_exact_size(egui::vec2(48.0, 18.0), egui::Sense::hover());
-                    ui.painter().rect_filled(v_rect, 4.0, theme::BG_SUBTLE);
-                    ui.painter().rect_stroke(v_rect, 4.0, egui::Stroke::new(1.0, theme::BORDER_CARD));
+                    ui.painter().rect_filled(v_rect, 4.0, ltheme::BG_SUBTLE);
+                    ui.painter().rect_stroke(v_rect, 4.0, egui::Stroke::new(1.0, ltheme::BORDER_CARD));
                     ui.painter().text(
                         v_rect.center(),
                         egui::Align2::CENTER_CENTER,
                         concat!("v", env!("CARGO_PKG_VERSION")),
                         egui::FontId::proportional(9.5),
-                        theme::TEXT_MUTED,
+                        ltheme::TEXT_MUTED,
                     );
 
                     // Live monitor status badge
@@ -731,14 +735,14 @@ impl eframe::App for SettingsWindow {
                         egui::Sense::hover(),
                     );
                     let status_dot_color = if active_count > 0 {
-                        theme::STATUS_ONLINE
+                        ltheme::STATUS_ONLINE
                     } else {
-                        theme::STATUS_OFFLINE
+                        ltheme::STATUS_OFFLINE
                     };
                     let status_bg = if active_count > 0 {
-                        theme::STATUS_ONLINE_BG
+                        ltheme::STATUS_ONLINE_BG
                     } else {
-                        theme::BG_SUBTLE
+                        ltheme::BG_SUBTLE
                     };
                     ui.painter().rect_filled(status_rect, 9.0, status_bg);
                     ui.painter().circle_filled(
@@ -756,7 +760,7 @@ impl eframe::App for SettingsWindow {
                         egui::Align2::LEFT_CENTER,
                         status_text,
                         egui::FontId::proportional(9.5),
-                        if active_count > 0 { theme::STATUS_ONLINE } else { theme::TEXT_MUTED },
+                        if active_count > 0 { ltheme::STATUS_ONLINE } else { ltheme::TEXT_MUTED },
                     );
 
                     // Right-side discovery action
@@ -765,11 +769,11 @@ impl eframe::App for SettingsWindow {
                         let scan_text = if is_scanning { "Scanning..." } else { "Detect Devices" };
                         let scan_btn = egui::Button::new(
                             egui::RichText::new(scan_text)
-                                .color(theme::TEXT_PRIMARY)
+                                .color(ltheme::TEXT_PRIMARY)
                                 .font(egui::FontId::proportional(11.0))
                                 .strong(),
                         )
-                        .fill(theme::BTN_SECONDARY_BG)
+                        .fill(ltheme::BTN_SECONDARY_BG)
                         .rounding(6.0)
                         .min_size(egui::vec2(110.0, 26.0));
 
@@ -791,27 +795,27 @@ impl eframe::App for SettingsWindow {
         egui::TopBottomPanel::bottom("footer_panel")
             .frame(
                 egui::Frame::none()
-                    .fill(theme::BG_HEADER)
+                    .fill(ltheme::BG_HEADER)
                     .inner_margin(egui::Margin { left: 20.0, right: 20.0, top: 12.0, bottom: 12.0 })
-                    .stroke(egui::Stroke::new(1.0, theme::BORDER_CARD)),
+                    .stroke(egui::Stroke::new(1.0, ltheme::BORDER_CARD)),
             )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     // Left: Changes indicator & shortcuts hint (Vector dot eliminates tofu checkmark box!)
                     if self.has_unsaved_changes() {
                         let (dot_rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
-                        ui.painter().circle_filled(dot_rect.center(), 3.5, theme::STATUS_CHARGING);
+                        ui.painter().circle_filled(dot_rect.center(), 3.5, ltheme::STATUS_CHARGING);
                         ui.label(
                             egui::RichText::new("Unsaved changes • Press Ctrl+S to save in-place")
-                                .color(theme::STATUS_CHARGING)
+                                .color(ltheme::STATUS_CHARGING)
                                 .font(egui::FontId::proportional(11.0)),
                         );
                     } else {
                         let (dot_rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
-                        ui.painter().circle_filled(dot_rect.center(), 3.5, theme::STATUS_ONLINE);
+                        ui.painter().circle_filled(dot_rect.center(), 3.5, ltheme::STATUS_ONLINE);
                         ui.label(
                             egui::RichText::new("Settings up to date • Esc to close")
-                                .color(theme::TEXT_MUTED)
+                                .color(ltheme::TEXT_MUTED)
                                 .font(egui::FontId::proportional(11.0)),
                         );
                     }
@@ -821,11 +825,11 @@ impl eframe::App for SettingsWindow {
                         // High-contrast primary button (Linear/Fluent style)
                         let save_btn = egui::Button::new(
                             egui::RichText::new("Save & Close")
-                                .color(theme::BTN_PRIMARY_TEXT)
+                                .color(ltheme::BTN_PRIMARY_TEXT)
                                 .strong()
                                 .font(egui::FontId::proportional(12.0)),
                         )
-                        .fill(theme::BTN_PRIMARY_BG)
+                        .fill(ltheme::BTN_PRIMARY_BG)
                         .rounding(6.0)
                         .min_size(egui::vec2(110.0, 30.0));
 
@@ -845,7 +849,7 @@ impl eframe::App for SettingsWindow {
                         // Cancel button
                         let cancel_btn = egui::Button::new(
                             egui::RichText::new("Cancel")
-                                .color(theme::TEXT_MUTED)
+                                .color(ltheme::TEXT_MUTED)
                                 .font(egui::FontId::proportional(12.0)),
                         )
                         .fill(egui::Color32::TRANSPARENT)
@@ -867,7 +871,7 @@ impl eframe::App for SettingsWindow {
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::none()
-                    .fill(theme::BG_APP)
+                    .fill(ltheme::BG_APP)
                     .inner_margin(egui::Margin { left: 20.0, right: 20.0, top: 12.0, bottom: 8.0 }),
             )
             .show(ctx, |ui| {
@@ -880,8 +884,8 @@ impl eframe::App for SettingsWindow {
                     let (rect, _) = ui.allocate_exact_size(egui::vec2(total_width, pill_height), egui::Sense::hover());
 
                     // Container Pill Background
-                    ui.painter().rect_filled(rect, 17.0, theme::BG_PILL_TRACK);
-                    ui.painter().rect_stroke(rect, 17.0, egui::Stroke::new(1.0, theme::BORDER_CARD));
+                    ui.painter().rect_filled(rect, 17.0, ltheme::BG_PILL_TRACK);
+                    ui.painter().rect_stroke(rect, 17.0, egui::Stroke::new(1.0, ltheme::BORDER_CARD));
 
                     let tab_width = (total_width - 8.0) / 3.0;
 
@@ -908,16 +912,16 @@ impl eframe::App for SettingsWindow {
                         }
 
                         if is_active {
-                            ui.painter().rect_filled(tab_rect, 14.0, theme::BG_TAB_ACTIVE);
-                            ui.painter().rect_stroke(tab_rect, 14.0, egui::Stroke::new(1.0, theme::BORDER_HOVER));
+                            ui.painter().rect_filled(tab_rect, 14.0, ltheme::BG_TAB_ACTIVE);
+                            ui.painter().rect_stroke(tab_rect, 14.0, egui::Stroke::new(1.0, ltheme::BORDER_HOVER));
                         } else if resp.hovered() {
-                            ui.painter().rect_filled(tab_rect, 14.0, theme::BG_TAB_HOVER);
+                            ui.painter().rect_filled(tab_rect, 14.0, ltheme::BG_TAB_HOVER);
                         }
 
                         let text_color = if is_active {
-                            theme::TEXT_PRIMARY
+                            ltheme::TEXT_PRIMARY
                         } else {
-                            theme::TEXT_MUTED
+                            ltheme::TEXT_MUTED
                         };
 
                         ui.painter().text(
@@ -958,18 +962,18 @@ impl eframe::App for SettingsWindow {
                             8.0,
                             egui::Color32::from_rgba_premultiplied(0, 0, 0, 80),
                         );
-                        ui.painter().rect_filled(toast_rect, 8.0, theme::BG_CARD);
+                        ui.painter().rect_filled(toast_rect, 8.0, ltheme::BG_CARD);
                         ui.painter().rect_stroke(
                             toast_rect,
                             8.0,
-                            egui::Stroke::new(1.0, theme::BORDER_HOVER),
+                            egui::Stroke::new(1.0, ltheme::BORDER_HOVER),
                         );
                         ui.painter().text(
                             toast_rect.center(),
                             egui::Align2::CENTER_CENTER,
                             toast_text,
                             egui::FontId::proportional(11.0),
-                            theme::TEXT_PRIMARY,
+                            ltheme::TEXT_PRIMARY,
                         );
                     } else {
                         self.toast = None;
@@ -1018,19 +1022,19 @@ impl SettingsWindow {
             let card_width = ((ui.available_width() - 24.0) / 4.0).max(120.0);
 
             // Card 1: Total
-            if render_stat_card(ui, StatCardType::Configured, &total_devices.to_string(), "Configured", theme::TEXT_SECONDARY, is_all, card_width).clicked() {
+            if render_stat_card(ui, StatCardType::Configured, &total_devices.to_string(), "Configured", ltheme::TEXT_SECONDARY, is_all, card_width).clicked() {
                 self.filter_status = DeviceFilter::All;
             }
             // Card 2: Online (glowing vector circle)
-            if render_stat_card(ui, StatCardType::Connected, &connected_count.to_string(), "Connected", theme::STATUS_ONLINE, is_connected, card_width).clicked() {
+            if render_stat_card(ui, StatCardType::Connected, &connected_count.to_string(), "Connected", ltheme::STATUS_ONLINE, is_connected, card_width).clicked() {
                 self.filter_status = DeviceFilter::Connected;
             }
             // Card 3: Charging (lightning bolt)
-            if render_stat_card(ui, StatCardType::Charging, &charging_count.to_string(), "Charging", theme::STATUS_CHARGING, is_charging, card_width).clicked() {
+            if render_stat_card(ui, StatCardType::Charging, &charging_count.to_string(), "Charging", ltheme::STATUS_CHARGING, is_charging, card_width).clicked() {
                 self.filter_status = DeviceFilter::Charging;
             }
             // Card 4: Low Alerts (warning sign)
-            if render_stat_card(ui, StatCardType::LowAlerts, &low_battery_count.to_string(), "Low Alerts", theme::STATUS_LOW_ALERT, is_low, card_width).clicked() {
+            if render_stat_card(ui, StatCardType::LowAlerts, &low_battery_count.to_string(), "Low Alerts", ltheme::STATUS_LOW_ALERT, is_low, card_width).clicked() {
                 self.filter_status = DeviceFilter::LowBattery;
             }
         });
@@ -1053,12 +1057,12 @@ impl SettingsWindow {
                     let is_sel = self.filter_status == filter_opt;
                     let btn = egui::Button::new(
                         egui::RichText::new(label)
-                            .color(if is_sel { theme::TEXT_PRIMARY } else { theme::TEXT_MUTED })
+                            .color(if is_sel { ltheme::TEXT_PRIMARY } else { ltheme::TEXT_MUTED })
                             .font(egui::FontId::proportional(11.0))
                             .strong(),
                     )
-                    .fill(if is_sel { theme::BG_TAB_ACTIVE } else { theme::BG_CARD })
-                    .stroke(egui::Stroke::new(1.0, if is_sel { theme::BORDER_HOVER } else { theme::BORDER_CARD }))
+                    .fill(if is_sel { ltheme::BG_TAB_ACTIVE } else { ltheme::BG_CARD })
+                    .stroke(egui::Stroke::new(1.0, if is_sel { ltheme::BORDER_HOVER } else { ltheme::BORDER_CARD }))
                     .rounding(6.0);
 
                     if ui.add(btn).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
@@ -1130,15 +1134,15 @@ impl SettingsWindow {
 
         if filtered_indices.is_empty() {
             egui::Frame::none()
-                .fill(theme::BG_CARD)
-                .stroke(egui::Stroke::new(1.0, theme::BORDER_CARD))
+                .fill(ltheme::BG_CARD)
+                .stroke(egui::Stroke::new(1.0, ltheme::BORDER_CARD))
                 .rounding(10.0)
                 .inner_margin(egui::Margin::same(24.0))
                 .show(ui, |ui| {
                     ui.vertical_centered(|ui| {
-                        ui.label(egui::RichText::new("No Peripherals Match Filter").strong().color(theme::TEXT_PRIMARY).font(egui::FontId::proportional(14.0)));
+                        ui.label(egui::RichText::new("No Peripherals Match Filter").strong().color(ltheme::TEXT_PRIMARY).font(egui::FontId::proportional(14.0)));
                         ui.add_space(2.0);
-                        ui.label(egui::RichText::new("Try adjusting your search query or switching back to 'All'.").color(theme::TEXT_MUTED).font(egui::FontId::proportional(11.0)));
+                        ui.label(egui::RichText::new("Try adjusting your search query or switching back to 'All'.").color(ltheme::TEXT_MUTED).font(egui::FontId::proportional(11.0)));
                         ui.add_space(8.0);
                         if ui.button(egui::RichText::new("Clear Search & Filters").font(egui::FontId::proportional(11.0))).clicked() {
                             self.search_query.clear();
@@ -1162,13 +1166,13 @@ impl SettingsWindow {
 
             // Device Card Frame
             egui::Frame::none()
-                .fill(theme::BG_CARD)
+                .fill(ltheme::BG_CARD)
                 .stroke(egui::Stroke::new(
                     1.0,
                     if is_active {
-                        theme::BORDER_CARD_ACTIVE
+                        ltheme::BORDER_CARD_ACTIVE
                     } else {
-                        theme::BORDER_CARD
+                        ltheme::BORDER_CARD
                     },
                 ))
                 .rounding(10.0)
@@ -1181,14 +1185,14 @@ impl SettingsWindow {
                         ui.horizontal(|ui| {
                             // Category Tag Capsule
                             let (badge_rect, _) = ui.allocate_exact_size(egui::vec2(58.0, 22.0), egui::Sense::hover());
-                            ui.painter().rect_filled(badge_rect, 4.0, theme::BG_SUBTLE);
-                            ui.painter().rect_stroke(badge_rect, 4.0, egui::Stroke::new(1.0, theme::BORDER_CARD));
+                            ui.painter().rect_filled(badge_rect, 4.0, ltheme::BG_SUBTLE);
+                            ui.painter().rect_stroke(badge_rect, 4.0, egui::Stroke::new(1.0, ltheme::BORDER_CARD));
                             ui.painter().text(
                                 badge_rect.center(),
                                 egui::Align2::CENTER_CENTER,
                                 type_tag,
                                 egui::FontId::proportional(9.5),
-                                theme::TEXT_SECONDARY,
+                                ltheme::TEXT_SECONDARY,
                             );
 
                             ui.add_space(4.0);
@@ -1206,8 +1210,8 @@ impl SettingsWindow {
                                     self.focus_rename = false;
                                 }
 
-                                let save_clicked = ui.button(egui::RichText::new("Save").color(theme::STATUS_ONLINE).font(egui::FontId::proportional(11.0))).clicked();
-                                let cancel_clicked = ui.button(egui::RichText::new("Cancel").color(theme::TEXT_MUTED).font(egui::FontId::proportional(11.0))).clicked();
+                                let save_clicked = ui.button(egui::RichText::new("Save").color(ltheme::STATUS_ONLINE).font(egui::FontId::proportional(11.0))).clicked();
+                                let cancel_clicked = ui.button(egui::RichText::new("Cancel").color(ltheme::TEXT_MUTED).font(egui::FontId::proportional(11.0))).clicked();
                                 let enter_pressed = edit_resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
 
                                 if save_clicked || enter_pressed {
@@ -1223,7 +1227,7 @@ impl SettingsWindow {
                             } else {
                                 ui.label(
                                     egui::RichText::new(&dev.name)
-                                        .color(if dev.enabled { theme::TEXT_PRIMARY } else { theme::TEXT_MUTED })
+                                        .color(if dev.enabled { ltheme::TEXT_PRIMARY } else { ltheme::TEXT_MUTED })
                                         .font(egui::FontId::proportional(13.5))
                                         .strong(),
                                 );
@@ -1231,11 +1235,11 @@ impl SettingsWindow {
                                 let rename_btn = ui.add(
                                     egui::Button::new(
                                         egui::RichText::new("Edit")
-                                            .color(theme::TEXT_MUTED)
+                                            .color(ltheme::TEXT_MUTED)
                                             .font(egui::FontId::proportional(10.5)),
                                     )
-                                    .fill(theme::BG_SUBTLE)
-                                    .stroke(egui::Stroke::new(1.0, theme::BORDER_CARD))
+                                    .fill(ltheme::BG_SUBTLE)
+                                    .stroke(egui::Stroke::new(1.0, ltheme::BORDER_CARD))
                                     .rounding(4.0),
                                 ).on_hover_cursor(egui::CursorIcon::PointingHand);
 
@@ -1252,7 +1256,7 @@ impl SettingsWindow {
                                 toggle_ui(ui, &mut dev.enabled);
                                 ui.label(
                                     egui::RichText::new(if dev.enabled { "Enabled" } else { "Paused" })
-                                        .color(theme::TEXT_MUTED)
+                                        .color(ltheme::TEXT_MUTED)
                                         .font(egui::FontId::proportional(10.0)),
                                 );
 
@@ -1262,14 +1266,14 @@ impl SettingsWindow {
                                 let (status_badge, _) = ui.allocate_exact_size(egui::vec2(78.0, 20.0), egui::Sense::hover());
                                 let (badge_bg, dot_color, status_label) = if is_active {
                                     (
-                                        theme::STATUS_ONLINE_BG,
-                                        theme::STATUS_ONLINE,
+                                        ltheme::STATUS_ONLINE_BG,
+                                        ltheme::STATUS_ONLINE,
                                         "ONLINE",
                                     )
                                 } else {
                                     (
-                                        theme::BG_SUBTLE,
-                                        theme::STATUS_OFFLINE,
+                                        ltheme::BG_SUBTLE,
+                                        ltheme::STATUS_OFFLINE,
                                         "OFFLINE",
                                     )
                                 };
@@ -1297,7 +1301,7 @@ impl SettingsWindow {
                         if !dev.enabled {
                             ui.label(
                                 egui::RichText::new("Device monitoring is paused.")
-                                    .color(theme::TEXT_DIM)
+                                    .color(ltheme::TEXT_DIM)
                                     .font(egui::FontId::proportional(11.0))
                                     .italics(),
                             );
@@ -1308,7 +1312,7 @@ impl SettingsWindow {
                                     if active_channels.is_empty() {
                                         ui.label(
                                             egui::RichText::new("Peripheral is connected but reports no battery channels.")
-                                                .color(theme::TEXT_MUTED)
+                                                .color(ltheme::TEXT_MUTED)
                                                 .font(egui::FontId::proportional(10.5)),
                                         );
                                     } else if active_channels.len() == 1 {
@@ -1317,24 +1321,24 @@ impl SettingsWindow {
                                         ui.horizontal(|ui| {
                                             ui.label(
                                                 egui::RichText::new("Battery Level")
-                                                    .color(theme::TEXT_PRIMARY)
+                                                    .color(ltheme::TEXT_PRIMARY)
                                                     .font(egui::FontId::proportional(11.5)),
                                             );
                                             if chan.charging {
                                                 ui.label(
                                                     egui::RichText::new("CHARGING")
-                                                        .color(theme::STATUS_CHARGING)
+                                                        .color(ltheme::STATUS_CHARGING)
                                                         .font(egui::FontId::proportional(10.0))
                                                         .strong(),
                                                 );
                                             }
                                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                                 let pct_color = if chan.charging {
-                                                    theme::STATUS_CHARGING
+                                                    ltheme::STATUS_CHARGING
                                                 } else if chan.percentage <= dev.threshold {
-                                                    theme::STATUS_LOW_ALERT
+                                                    ltheme::STATUS_LOW_ALERT
                                                 } else {
-                                                    theme::TEXT_PRIMARY
+                                                    ltheme::TEXT_PRIMARY
                                                 };
                                                 ui.label(
                                                     egui::RichText::new(format!("{}%", chan.percentage))
@@ -1365,13 +1369,13 @@ impl SettingsWindow {
                                                     ui.horizontal(|ui| {
                                                         ui.label(
                                                             egui::RichText::new(channel_name)
-                                                                .color(theme::TEXT_PRIMARY)
+                                                                .color(ltheme::TEXT_PRIMARY)
                                                                 .font(egui::FontId::proportional(11.0)),
                                                         );
                                                         if chan.charging {
                                                             ui.label(
                                                                 egui::RichText::new("CHG")
-                                                                    .color(theme::STATUS_CHARGING)
+                                                                    .color(ltheme::STATUS_CHARGING)
                                                                     .font(egui::FontId::proportional(10.0))
                                                                     .strong(),
                                                             );
@@ -1379,7 +1383,7 @@ impl SettingsWindow {
                                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                                             ui.label(
                                                                 egui::RichText::new(format!("{}%", chan.percentage))
-                                                                    .color(if chan.charging { theme::STATUS_CHARGING } else { theme::TEXT_PRIMARY })
+                                                                    .color(if chan.charging { ltheme::STATUS_CHARGING } else { ltheme::TEXT_PRIMARY })
                                                                     .font(egui::FontId::monospace(10.5))
                                                                     .strong(),
                                                             );
@@ -1396,7 +1400,7 @@ impl SettingsWindow {
                                 DeviceBatteryStatus::Offline => {
                                     ui.label(
                                         egui::RichText::new("Device is sleeping or disconnected. Wake or plug in to refresh battery state.")
-                                            .color(theme::TEXT_DIM)
+                                            .color(ltheme::TEXT_DIM)
                                             .font(egui::FontId::proportional(10.5))
                                             .italics(),
                                     );
@@ -1405,7 +1409,7 @@ impl SettingsWindow {
                         } else {
                             ui.label(
                                 egui::RichText::new("No communication data received yet. Peripheral will update on next poll.")
-                                    .color(theme::TEXT_DIM)
+                                    .color(ltheme::TEXT_DIM)
                                     .font(egui::FontId::proportional(10.5))
                                     .italics(),
                             );
@@ -1422,7 +1426,7 @@ impl SettingsWindow {
                             ui.horizontal(|ui| {
                                 ui.label(
                                     egui::RichText::new("Alert Threshold")
-                                        .color(theme::TEXT_SECONDARY)
+                                        .color(ltheme::TEXT_SECONDARY)
                                         .font(egui::FontId::proportional(11.5))
                                         .strong(),
                                 );
@@ -1434,7 +1438,7 @@ impl SettingsWindow {
                                     }
                                     ui.label(
                                         egui::RichText::new(format!("{}%", dev.threshold))
-                                            .color(theme::TEXT_PRIMARY)
+                                            .color(ltheme::TEXT_PRIMARY)
                                             .font(egui::FontId::monospace(11.0))
                                             .strong(),
                                     );
@@ -1451,10 +1455,10 @@ impl SettingsWindow {
                                         let p_btn = egui::Button::new(
                                             egui::RichText::new(format!("{}%", preset))
                                                 .font(egui::FontId::monospace(9.0))
-                                                .color(if is_sel { theme::TEXT_PRIMARY } else { theme::TEXT_MUTED })
+                                                .color(if is_sel { ltheme::TEXT_PRIMARY } else { ltheme::TEXT_MUTED })
                                         )
-                                        .fill(if is_sel { theme::BG_TAB_ACTIVE } else { theme::BG_SUBTLE })
-                                        .stroke(egui::Stroke::new(1.0, if is_sel { theme::BORDER_HOVER } else { theme::BORDER_CARD }))
+                                        .fill(if is_sel { ltheme::BG_TAB_ACTIVE } else { ltheme::BG_SUBTLE })
+                                        .stroke(egui::Stroke::new(1.0, if is_sel { ltheme::BORDER_HOVER } else { ltheme::BORDER_CARD }))
                                         .rounding(4.0)
                                         .min_size(egui::vec2(28.0, 18.0));
 
@@ -1467,14 +1471,14 @@ impl SettingsWindow {
 
                             ui.add_space(3.0);
                             ui.scope(|ui| {
-                                ui.visuals_mut().widgets.inactive.bg_fill = theme::BG_SUBTLE;
-                                ui.visuals_mut().widgets.inactive.fg_stroke = egui::Stroke::new(2.0, theme::TEXT_SECONDARY);
+                                ui.visuals_mut().widgets.inactive.bg_fill = ltheme::BG_SUBTLE;
+                                ui.visuals_mut().widgets.inactive.fg_stroke = egui::Stroke::new(2.0, ltheme::TEXT_SECONDARY);
                                 ui.spacing_mut().slider_width = ui.available_width();
                                 ui.add(egui::Slider::new(&mut dev.threshold, 5..=95).show_value(false).trailing_fill(true));
                             });
                             ui.label(
                                 egui::RichText::new(format!("Alerts trigger when battery falls below {}%", dev.threshold))
-                                    .color(theme::TEXT_DIM)
+                                    .color(ltheme::TEXT_DIM)
                                     .font(egui::FontId::proportional(9.0))
                                     .italics(),
                             );
@@ -1496,7 +1500,7 @@ impl SettingsWindow {
                         ui.horizontal(|ui| {
                             ui.label(
                                 egui::RichText::new(format!("ID: {} • {}", dev.unique_id, type_title))
-                                    .color(theme::TEXT_DIM)
+                                    .color(ltheme::TEXT_DIM)
                                     .font(egui::FontId::monospace(9.5)),
                             );
 
@@ -1504,7 +1508,7 @@ impl SettingsWindow {
                                 if is_active {
                                     let status_label = ui.label(
                                         egui::RichText::new("Connected (Pause above to disable)")
-                                            .color(theme::TEXT_DIM)
+                                            .color(ltheme::TEXT_DIM)
                                             .font(egui::FontId::proportional(9.5)),
                                     );
                                     status_label.on_hover_text("Connected peripherals cannot be removed while active. Turn toggle to 'Paused' to silence monitoring, or disconnect the device to remove.");
@@ -1512,7 +1516,7 @@ impl SettingsWindow {
                                     ui.horizontal(|ui| {
                                         ui.label(
                                             egui::RichText::new("Remove?")
-                                                .color(theme::STATUS_LOW_ALERT)
+                                                .color(ltheme::STATUS_LOW_ALERT)
                                                 .font(egui::FontId::proportional(10.5))
                                                 .strong(),
                                         );
@@ -1525,7 +1529,7 @@ impl SettingsWindow {
                                                 .font(egui::FontId::proportional(10.0))
                                                 .strong(),
                                         )
-                                        .fill(theme::STATUS_LOW_ALERT);
+                                        .fill(ltheme::STATUS_LOW_ALERT);
 
                                         if ui.add(confirm_btn).clicked() {
                                             to_remove = Some(idx);
@@ -1536,7 +1540,7 @@ impl SettingsWindow {
                                 } else {
                                     let remove_btn = egui::Button::new(
                                         egui::RichText::new("Remove Device")
-                                            .color(theme::STATUS_LOW_ALERT)
+                                            .color(ltheme::STATUS_LOW_ALERT)
                                             .font(egui::FontId::proportional(10.0)),
                                     )
                                     .fill(egui::Color32::TRANSPARENT)
@@ -1594,7 +1598,7 @@ impl SettingsWindow {
             ui.horizontal(|ui| {
                 ui.label(
                     egui::RichText::new("Low Battery Tray Icon")
-                        .color(theme::TEXT_SECONDARY)
+                        .color(ltheme::TEXT_SECONDARY)
                         .font(egui::FontId::proportional(11.5))
                         .strong(),
                 );
@@ -1603,7 +1607,7 @@ impl SettingsWindow {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let reset_btn = egui::Button::new(
                             egui::RichText::new("Reset to Default")
-                                .color(theme::TEXT_MUTED)
+                                .color(ltheme::TEXT_MUTED)
                                 .font(egui::FontId::proportional(10.0)),
                         )
                         .fill(egui::Color32::TRANSPARENT);
@@ -1620,8 +1624,8 @@ impl SettingsWindow {
             ui.horizontal(|ui| {
                 // 1. Preview thumbnail box
                 let (prev_rect, _) = ui.allocate_exact_size(egui::vec2(28.0, 28.0), egui::Sense::hover());
-                ui.painter().rect_filled(prev_rect, 6.0, theme::BG_SUBTLE);
-                ui.painter().rect_stroke(prev_rect, 6.0, egui::Stroke::new(1.0, theme::BORDER_CARD));
+                ui.painter().rect_filled(prev_rect, 6.0, ltheme::BG_SUBTLE);
+                ui.painter().rect_stroke(prev_rect, 6.0, egui::Stroke::new(1.0, ltheme::BORDER_CARD));
 
                 if let Some(tex) = self.icon_textures.get(&preview_icon_name).or_else(|| self.icon_textures.get(default_icon_name)) {
                     let img_rect = egui::Rect::from_center_size(prev_rect.center(), egui::vec2(20.0, 20.0));
@@ -1659,9 +1663,9 @@ impl SettingsWindow {
                             ui.close_menu();
                         }
                         if is_default {
-                            ui.painter().rect_filled(def_rect, 4.0, theme::BG_TAB_ACTIVE);
+                            ui.painter().rect_filled(def_rect, 4.0, ltheme::BG_TAB_ACTIVE);
                         } else if def_resp.hovered() {
-                            ui.painter().rect_filled(def_rect, 4.0, theme::BG_CARD_HOVER);
+                            ui.painter().rect_filled(def_rect, 4.0, ltheme::BG_CARD_HOVER);
                         }
                         if let Some(tex) = self.icon_textures.get(default_icon_name) {
                             let img_rect = egui::Rect::from_center_size(egui::pos2(def_rect.left() + 12.0, def_rect.center().y), egui::vec2(16.0, 16.0));
@@ -1672,7 +1676,7 @@ impl SettingsWindow {
                             egui::Align2::LEFT_CENTER,
                             format!("Default ({})", format_icon_label(default_icon_name)),
                             egui::FontId::proportional(11.0),
-                            if is_default { theme::TEXT_PRIMARY } else { theme::TEXT_SECONDARY },
+                            if is_default { ltheme::TEXT_PRIMARY } else { ltheme::TEXT_SECONDARY },
                         );
 
                         // Category-specific icons
@@ -1686,9 +1690,9 @@ impl SettingsWindow {
                                     ui.close_menu();
                                 }
                                 if is_selected {
-                                    ui.painter().rect_filled(row_rect, 4.0, theme::BG_TAB_ACTIVE);
+                                    ui.painter().rect_filled(row_rect, 4.0, ltheme::BG_TAB_ACTIVE);
                                 } else if row_resp.hovered() {
-                                    ui.painter().rect_filled(row_rect, 4.0, theme::BG_CARD_HOVER);
+                                    ui.painter().rect_filled(row_rect, 4.0, ltheme::BG_CARD_HOVER);
                                 }
                                 if let Some(tex) = self.icon_textures.get(icon_name.as_str()) {
                                     let img_rect = egui::Rect::from_center_size(egui::pos2(row_rect.left() + 12.0, row_rect.center().y), egui::vec2(16.0, 16.0));
@@ -1699,7 +1703,7 @@ impl SettingsWindow {
                                     egui::Align2::LEFT_CENTER,
                                     format_icon_label(icon_name),
                                     egui::FontId::proportional(11.0),
-                                    if is_selected { theme::TEXT_PRIMARY } else { theme::TEXT_SECONDARY },
+                                    if is_selected { ltheme::TEXT_PRIMARY } else { ltheme::TEXT_SECONDARY },
                                 );
                             }
                         }
@@ -1715,9 +1719,9 @@ impl SettingsWindow {
                                     ui.close_menu();
                                 }
                                 if is_selected {
-                                    ui.painter().rect_filled(row_rect, 4.0, theme::BG_TAB_ACTIVE);
+                                    ui.painter().rect_filled(row_rect, 4.0, ltheme::BG_TAB_ACTIVE);
                                 } else if row_resp.hovered() {
-                                    ui.painter().rect_filled(row_rect, 4.0, theme::BG_CARD_HOVER);
+                                    ui.painter().rect_filled(row_rect, 4.0, ltheme::BG_CARD_HOVER);
                                 }
                                 if let Some(tex) = self.icon_textures.get(icon_name.as_str()) {
                                     let img_rect = egui::Rect::from_center_size(egui::pos2(row_rect.left() + 12.0, row_rect.center().y), egui::vec2(16.0, 16.0));
@@ -1728,7 +1732,7 @@ impl SettingsWindow {
                                     egui::Align2::LEFT_CENTER,
                                     format_icon_label(icon_name),
                                     egui::FontId::proportional(11.0),
-                                    if is_selected { theme::TEXT_PRIMARY } else { theme::TEXT_SECONDARY },
+                                    if is_selected { ltheme::TEXT_PRIMARY } else { ltheme::TEXT_SECONDARY },
                                 );
                             }
                         }
@@ -1739,7 +1743,7 @@ impl SettingsWindow {
                 // 3. Quick Pick Color Swatches with visual color dots
                 ui.label(
                     egui::RichText::new("Quick:")
-                        .color(theme::TEXT_MUTED)
+                        .color(ltheme::TEXT_MUTED)
                         .font(egui::FontId::proportional(10.0)),
                 );
 
@@ -1764,19 +1768,19 @@ impl SettingsWindow {
                     }
 
                     let bg_color = if is_current {
-                        theme::BG_TAB_ACTIVE
+                        ltheme::BG_TAB_ACTIVE
                     } else if chip_resp.hovered() {
-                        theme::BG_CARD_HOVER
+                        ltheme::BG_CARD_HOVER
                     } else {
-                        theme::BG_SUBTLE
+                        ltheme::BG_SUBTLE
                     };
 
                     let border_color = if is_current {
-                        theme::BORDER_FOCUS
+                        ltheme::BORDER_FOCUS
                     } else if chip_resp.hovered() {
-                        theme::BORDER_HOVER
+                        ltheme::BORDER_HOVER
                     } else {
-                        theme::BORDER_CARD
+                        ltheme::BORDER_CARD
                     };
 
                     ui.painter().rect_filled(chip_rect, 4.0, bg_color);
@@ -1792,7 +1796,7 @@ impl SettingsWindow {
                         egui::Align2::LEFT_CENTER,
                         swatch_label,
                         egui::FontId::proportional(9.5),
-                        if is_current { theme::TEXT_PRIMARY } else { theme::TEXT_SECONDARY },
+                        if is_current { ltheme::TEXT_PRIMARY } else { ltheme::TEXT_SECONDARY },
                     );
 
                     chip_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -1802,7 +1806,7 @@ impl SettingsWindow {
             ui.add_space(3.0);
             ui.label(
                 egui::RichText::new("Displayed in the Windows taskbar tray when battery drops below alert threshold.")
-                    .color(theme::TEXT_DIM)
+                    .color(ltheme::TEXT_DIM)
                     .font(egui::FontId::proportional(9.0))
                     .italics(),
             );
@@ -1811,15 +1815,15 @@ impl SettingsWindow {
 
     fn render_empty_state(&mut self, ui: &mut egui::Ui) {
         egui::Frame::none()
-            .fill(theme::BG_CARD)
-            .stroke(egui::Stroke::new(1.0, theme::BORDER_CARD))
+            .fill(ltheme::BG_CARD)
+            .stroke(egui::Stroke::new(1.0, ltheme::BORDER_CARD))
             .rounding(12.0)
             .inner_margin(egui::Margin::same(32.0))
             .show(ui, |ui| {
                 ui.vertical_centered(|ui| {
                     let (icon_rect, _) = ui.allocate_exact_size(egui::vec2(40.0, 40.0), egui::Sense::hover());
-                    ui.painter().rect_filled(icon_rect, 8.0, theme::BG_SUBTLE);
-                    ui.painter().rect_stroke(icon_rect, 8.0, egui::Stroke::new(1.0, theme::BORDER_CARD));
+                    ui.painter().rect_filled(icon_rect, 8.0, ltheme::BG_SUBTLE);
+                    ui.painter().rect_stroke(icon_rect, 8.0, egui::Stroke::new(1.0, ltheme::BORDER_CARD));
                     let bolt_center = icon_rect.center();
                     let pts = [
                         egui::pos2(bolt_center.x + 1.5, bolt_center.y - 11.0),
@@ -1831,13 +1835,13 @@ impl SettingsWindow {
                     ];
                     ui.painter().add(egui::Shape::convex_polygon(
                         pts.to_vec(),
-                        theme::STATUS_CHARGING,
+                        ltheme::STATUS_CHARGING,
                         egui::Stroke::NONE,
                     ));
                     ui.add_space(8.0);
                     ui.label(
                         egui::RichText::new("No Peripherals Configured Yet")
-                            .color(theme::TEXT_PRIMARY)
+                            .color(ltheme::TEXT_PRIMARY)
                             .font(egui::FontId::proportional(16.0))
                             .strong(),
                     );
@@ -1846,18 +1850,18 @@ impl SettingsWindow {
                         egui::RichText::new(
                             "BatStat automatically monitors wireless mice (Pulsar, Logitech), Xbox controllers,\nSteelSeries Arctis GameBuds, and compatible HID devices.",
                         )
-                        .color(theme::TEXT_MUTED)
+                        .color(ltheme::TEXT_MUTED)
                         .font(egui::FontId::proportional(12.0)),
                     );
                     ui.add_space(14.0);
 
                     let btn = egui::Button::new(
                         egui::RichText::new("Detect Connected Peripherals")
-                            .color(theme::BTN_PRIMARY_TEXT)
+                            .color(ltheme::BTN_PRIMARY_TEXT)
                             .font(egui::FontId::proportional(12.0))
                             .strong(),
                     )
-                    .fill(theme::BTN_PRIMARY_BG)
+                    .fill(ltheme::BTN_PRIMARY_BG)
                     .rounding(6.0)
                     .min_size(egui::vec2(220.0, 34.0));
 
@@ -1878,8 +1882,8 @@ impl SettingsWindow {
             // CARD 1: DISPLAY & SYSTEM TRAY
             self.render_card_header(ui, "SYSTEM TRAY & DISPLAY");
             egui::Frame::none()
-                .fill(theme::BG_CARD)
-                .stroke(egui::Stroke::new(1.0, theme::BORDER_CARD))
+                .fill(ltheme::BG_CARD)
+                .stroke(egui::Stroke::new(1.0, ltheme::BORDER_CARD))
                 .rounding(10.0)
                 .inner_margin(egui::Margin::same(14.0))
                 .show(ui, |ui| {
@@ -1887,8 +1891,8 @@ impl SettingsWindow {
                         // Show Percentage in Tray
                         ui.horizontal(|ui| {
                             ui.vertical(|ui| {
-                                ui.label(egui::RichText::new("Show Battery Percentage in Tray").color(theme::TEXT_PRIMARY).font(egui::FontId::proportional(13.0)));
-                                ui.label(egui::RichText::new("Render a live device battery percentage directly on the system tray icon instead of the default icon.").color(theme::TEXT_MUTED).font(egui::FontId::proportional(9.5)).italics());
+                                ui.label(egui::RichText::new("Show Battery Percentage in Tray").color(ltheme::TEXT_PRIMARY).font(egui::FontId::proportional(13.0)));
+                                ui.label(egui::RichText::new("Render a live device battery percentage directly on the system tray icon instead of the default icon.").color(ltheme::TEXT_MUTED).font(egui::FontId::proportional(9.5)).italics());
                             });
 
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1926,10 +1930,10 @@ impl SettingsWindow {
                         // Live tray preview
                         ui.add_space(6.0);
                         ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("Live Tray Preview:").color(theme::TEXT_MUTED).font(egui::FontId::proportional(10.0)));
+                            ui.label(egui::RichText::new("Live Tray Preview:").color(ltheme::TEXT_MUTED).font(egui::FontId::proportional(10.0)));
                             let (prev_rect, _) = ui.allocate_exact_size(egui::vec2(38.0, 20.0), egui::Sense::hover());
-                            ui.painter().rect_filled(prev_rect, 4.0, theme::BG_SUBTLE);
-                            ui.painter().rect_stroke(prev_rect, 4.0, egui::Stroke::new(1.0, theme::BORDER_CARD));
+                            ui.painter().rect_filled(prev_rect, 4.0, ltheme::BG_SUBTLE);
+                            ui.painter().rect_stroke(prev_rect, 4.0, egui::Stroke::new(1.0, ltheme::BORDER_CARD));
 
                             if let Some(ref ch_id) = self.config.tray_battery_channel {
                                 let mut pct_label = "85%".to_string();
@@ -1948,7 +1952,7 @@ impl SettingsWindow {
                                         }
                                     }
                                 }
-                                ui.painter().text(prev_rect.center(), egui::Align2::CENTER_CENTER, pct_label, egui::FontId::monospace(9.5), theme::TEXT_PRIMARY);
+                                ui.painter().text(prev_rect.center(), egui::Align2::CENTER_CENTER, pct_label, egui::FontId::monospace(9.5), ltheme::TEXT_PRIMARY);
                             } else if let Some(tex) = self.icon_textures.get("ok.png") {
                                 let icon_box = egui::Rect::from_center_size(prev_rect.center(), egui::vec2(16.0, 16.0));
                                 ui.painter().image(tex.id(), icon_box, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
@@ -1962,34 +1966,34 @@ impl SettingsWindow {
                         // Polling Frequency Slider & Presets
                         ui.horizontal(|ui| {
                             ui.vertical(|ui| {
-                                ui.label(egui::RichText::new("Polling Frequency").color(theme::TEXT_PRIMARY).font(egui::FontId::proportional(13.0)));
-                                ui.label(egui::RichText::new("Interval between battery status queries. 60s is recommended to minimize peripheral wake-ups.").color(theme::TEXT_MUTED).font(egui::FontId::proportional(9.5)).italics());
+                                ui.label(egui::RichText::new("Polling Frequency").color(ltheme::TEXT_PRIMARY).font(egui::FontId::proportional(13.0)));
+                                ui.label(egui::RichText::new("Interval between battery status queries. 60s is recommended to minimize peripheral wake-ups.").color(ltheme::TEXT_MUTED).font(egui::FontId::proportional(9.5)).italics());
                             });
 
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 let (badge_rect, _) = ui.allocate_exact_size(egui::vec2(44.0, 20.0), egui::Sense::hover());
-                                ui.painter().rect_filled(badge_rect, 4.0, theme::BG_SUBTLE);
-                                ui.painter().rect_stroke(badge_rect, 4.0, egui::Stroke::new(1.0, theme::BORDER_CARD));
+                                ui.painter().rect_filled(badge_rect, 4.0, ltheme::BG_SUBTLE);
+                                ui.painter().rect_stroke(badge_rect, 4.0, egui::Stroke::new(1.0, ltheme::BORDER_CARD));
                                 ui.painter().text(
                                     badge_rect.center(),
                                     egui::Align2::CENTER_CENTER,
                                     format!("{}s", self.config.polling_interval_secs),
                                     egui::FontId::monospace(10.5),
-                                    theme::TEXT_PRIMARY,
+                                    ltheme::TEXT_PRIMARY,
                                 );
                             });
                         });
 
                         ui.add_space(4.0);
                         ui.scope(|ui| {
-                            ui.visuals_mut().widgets.inactive.bg_fill = theme::BG_SUBTLE;
-                            ui.visuals_mut().widgets.inactive.fg_stroke = egui::Stroke::new(2.0, theme::TEXT_SECONDARY);
+                            ui.visuals_mut().widgets.inactive.bg_fill = ltheme::BG_SUBTLE;
+                            ui.visuals_mut().widgets.inactive.fg_stroke = egui::Stroke::new(2.0, ltheme::TEXT_SECONDARY);
                             ui.spacing_mut().slider_width = ui.available_width() - 8.0;
                             ui.add(egui::Slider::new(&mut self.config.polling_interval_secs, 1..=60).show_value(false).trailing_fill(true));
                         });
 
                         ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("1s (Fast)").color(theme::TEXT_DIM).font(egui::FontId::proportional(9.0)));
+                            ui.label(egui::RichText::new("1s (Fast)").color(ltheme::TEXT_DIM).font(egui::FontId::proportional(9.0)));
                             ui.add_space(8.0);
                             if ui.button(egui::RichText::new("15s").font(egui::FontId::proportional(9.0))).clicked() {
                                 self.config.polling_interval_secs = 15;
@@ -2001,7 +2005,7 @@ impl SettingsWindow {
                                 self.config.polling_interval_secs = 60;
                             }
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                ui.label(egui::RichText::new("60s (Battery Safe)").color(theme::TEXT_DIM).font(egui::FontId::proportional(9.0)));
+                                ui.label(egui::RichText::new("60s (Battery Safe)").color(ltheme::TEXT_DIM).font(egui::FontId::proportional(9.0)));
                             });
                         });
                     });
@@ -2012,8 +2016,8 @@ impl SettingsWindow {
             // CARD 2: STARTUP & NOTIFICATIONS
             self.render_card_header(ui, "STARTUP & SYSTEM NOTIFICATIONS");
             egui::Frame::none()
-                .fill(theme::BG_CARD)
-                .stroke(egui::Stroke::new(1.0, theme::BORDER_CARD))
+                .fill(ltheme::BG_CARD)
+                .stroke(egui::Stroke::new(1.0, ltheme::BORDER_CARD))
                 .rounding(10.0)
                 .inner_margin(egui::Margin::same(14.0))
                 .show(ui, |ui| {
@@ -2021,8 +2025,8 @@ impl SettingsWindow {
                         // Launch on Startup
                         ui.horizontal(|ui| {
                             ui.vertical(|ui| {
-                                ui.label(egui::RichText::new("Launch on Windows Startup").color(theme::TEXT_PRIMARY).font(egui::FontId::proportional(13.0)));
-                                ui.label(egui::RichText::new("Start BatStat automatically minimized to the Windows system tray when logging in.").color(theme::TEXT_MUTED).font(egui::FontId::proportional(9.5)).italics());
+                                ui.label(egui::RichText::new("Launch on Windows Startup").color(ltheme::TEXT_PRIMARY).font(egui::FontId::proportional(13.0)));
+                                ui.label(egui::RichText::new("Start BatStat automatically minimized to the Windows system tray when logging in.").color(ltheme::TEXT_MUTED).font(egui::FontId::proportional(9.5)).italics());
                             });
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 let mut autostart = self.config.autostart;
@@ -2045,8 +2049,8 @@ impl SettingsWindow {
                         // Desktop Notifications
                         ui.horizontal(|ui| {
                             ui.vertical(|ui| {
-                                ui.label(egui::RichText::new("Desktop Notification Alerts").color(theme::TEXT_PRIMARY).font(egui::FontId::proportional(13.0)));
-                                ui.label(egui::RichText::new("Show native Windows toast notifications when a peripheral reaches its configured alert threshold.").color(theme::TEXT_MUTED).font(egui::FontId::proportional(9.5)).italics());
+                                ui.label(egui::RichText::new("Desktop Notification Alerts").color(ltheme::TEXT_PRIMARY).font(egui::FontId::proportional(13.0)));
+                                ui.label(egui::RichText::new("Show native Windows toast notifications when a peripheral reaches its configured alert threshold.").color(ltheme::TEXT_MUTED).font(egui::FontId::proportional(9.5)).italics());
                             });
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 toggle_ui(ui, &mut self.config.enable_notifications);
@@ -2058,11 +2062,11 @@ impl SettingsWindow {
                             ui.horizontal(|ui| {
                                 let test_btn = egui::Button::new(
                                     egui::RichText::new("Send Test Notification")
-                                        .color(theme::TEXT_PRIMARY)
+                                        .color(ltheme::TEXT_PRIMARY)
                                         .font(egui::FontId::proportional(10.5)),
                                 )
-                                .fill(theme::BTN_SECONDARY_BG)
-                                .stroke(egui::Stroke::new(1.0, theme::BORDER_CARD))
+                                .fill(ltheme::BTN_SECONDARY_BG)
+                                .stroke(egui::Stroke::new(1.0, ltheme::BORDER_CARD))
                                 .rounding(6.0);
 
                                 let resp = ui.add(test_btn).on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -2081,8 +2085,8 @@ impl SettingsWindow {
             // CARD 3: STORAGE & CUSTOM ICONS
             self.render_card_header(ui, "STORAGE & CUSTOM ASSETS");
             egui::Frame::none()
-                .fill(theme::BG_CARD)
-                .stroke(egui::Stroke::new(1.0, theme::BORDER_CARD))
+                .fill(ltheme::BG_CARD)
+                .stroke(egui::Stroke::new(1.0, ltheme::BORDER_CARD))
                 .rounding(10.0)
                 .inner_margin(egui::Margin::same(14.0))
                 .show(ui, |ui| {
@@ -2090,21 +2094,21 @@ impl SettingsWindow {
                         // Open Icons Directory
                         ui.horizontal(|ui| {
                             ui.vertical(|ui| {
-                                ui.label(egui::RichText::new("Custom Icons Folder").color(theme::TEXT_PRIMARY).font(egui::FontId::proportional(13.0)));
-                                ui.label(egui::RichText::new("Drop 32x32 PNG or ICO images here to expand low-battery icon choices.").color(theme::TEXT_MUTED).font(egui::FontId::proportional(9.5)).italics());
+                                ui.label(egui::RichText::new("Custom Icons Folder").color(ltheme::TEXT_PRIMARY).font(egui::FontId::proportional(13.0)));
+                                ui.label(egui::RichText::new("Drop 32x32 PNG or ICO images here to expand low-battery icon choices.").color(ltheme::TEXT_MUTED).font(egui::FontId::proportional(9.5)).italics());
                                 if let Some(ref dir) = crate::config::get_icons_dir_path() {
-                                    ui.label(egui::RichText::new(dir.to_string_lossy()).color(theme::TEXT_DIM).font(egui::FontId::monospace(9.0)));
+                                    ui.label(egui::RichText::new(dir.to_string_lossy()).color(ltheme::TEXT_DIM).font(egui::FontId::monospace(9.0)));
                                 }
                             });
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 let btn = egui::Button::new(
                                     egui::RichText::new("Open Icons Folder")
-                                        .color(theme::TEXT_PRIMARY)
+                                        .color(ltheme::TEXT_PRIMARY)
                                         .font(egui::FontId::proportional(11.0))
                                         .strong(),
                                 )
-                                .fill(theme::BTN_SECONDARY_BG)
-                                .stroke(egui::Stroke::new(1.0, theme::BORDER_CARD))
+                                .fill(ltheme::BTN_SECONDARY_BG)
+                                .stroke(egui::Stroke::new(1.0, ltheme::BORDER_CARD))
                                 .rounding(6.0);
 
                                 if ui.add(btn).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
@@ -2122,21 +2126,21 @@ impl SettingsWindow {
                         // Open Config Folder
                         ui.horizontal(|ui| {
                             ui.vertical(|ui| {
-                                ui.label(egui::RichText::new("AppData Configuration Directory").color(theme::TEXT_PRIMARY).font(egui::FontId::proportional(13.0)));
-                                ui.label(egui::RichText::new("Location of config.toml and diagnostic logs (%APPDATA%\\BatStat).").color(theme::TEXT_MUTED).font(egui::FontId::proportional(9.5)).italics());
+                                ui.label(egui::RichText::new("AppData Configuration Directory").color(ltheme::TEXT_PRIMARY).font(egui::FontId::proportional(13.0)));
+                                ui.label(egui::RichText::new("Location of config.toml and diagnostic logs (%APPDATA%\\BatStat).").color(ltheme::TEXT_MUTED).font(egui::FontId::proportional(9.5)).italics());
                                 if let Some(ref path) = crate::config::get_config_path() {
-                                    ui.label(egui::RichText::new(path.to_string_lossy()).color(theme::TEXT_DIM).font(egui::FontId::monospace(9.0)));
+                                    ui.label(egui::RichText::new(path.to_string_lossy()).color(ltheme::TEXT_DIM).font(egui::FontId::monospace(9.0)));
                                 }
                             });
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 let btn = egui::Button::new(
                                     egui::RichText::new("Open Config Folder")
-                                        .color(theme::TEXT_PRIMARY)
+                                        .color(ltheme::TEXT_PRIMARY)
                                         .font(egui::FontId::proportional(11.0))
                                         .strong(),
                                 )
-                                .fill(theme::BTN_SECONDARY_BG)
-                                .stroke(egui::Stroke::new(1.0, theme::BORDER_CARD))
+                                .fill(ltheme::BTN_SECONDARY_BG)
+                                .stroke(egui::Stroke::new(1.0, ltheme::BORDER_CARD))
                                 .rounding(6.0);
 
                                 if ui.add(btn).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
@@ -2155,16 +2159,16 @@ impl SettingsWindow {
             // CARD 4: DIAGNOSTICS & LOGGING
             self.render_card_header(ui, "DIAGNOSTICS & LOGGING");
             egui::Frame::none()
-                .fill(theme::BG_CARD)
-                .stroke(egui::Stroke::new(1.0, theme::BORDER_CARD))
+                .fill(ltheme::BG_CARD)
+                .stroke(egui::Stroke::new(1.0, ltheme::BORDER_CARD))
                 .rounding(10.0)
                 .inner_margin(egui::Margin::same(14.0))
                 .show(ui, |ui| {
                     ui.vertical(|ui| {
                         ui.horizontal(|ui| {
                             ui.vertical(|ui| {
-                                ui.label(egui::RichText::new("Diagnostic Debug Logging").color(theme::TEXT_PRIMARY).font(egui::FontId::proportional(13.0)));
-                                ui.label(egui::RichText::new("Record detailed peripheral polling and communication frames into debug.log.").color(theme::TEXT_MUTED).font(egui::FontId::proportional(9.5)).italics());
+                                ui.label(egui::RichText::new("Diagnostic Debug Logging").color(ltheme::TEXT_PRIMARY).font(egui::FontId::proportional(13.0)));
+                                ui.label(egui::RichText::new("Record detailed peripheral polling and communication frames into debug.log.").color(ltheme::TEXT_MUTED).font(egui::FontId::proportional(9.5)).italics());
                             });
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 toggle_ui(ui, &mut self.config.enable_debug_logging);
@@ -2184,15 +2188,15 @@ impl SettingsWindow {
         ui.vertical(|ui| {
             // HERO APP BANNER
             egui::Frame::none()
-                .fill(theme::BG_CARD)
-                .stroke(egui::Stroke::new(1.0, theme::BORDER_CARD))
+                .fill(ltheme::BG_CARD)
+                .stroke(egui::Stroke::new(1.0, ltheme::BORDER_CARD))
                 .rounding(10.0)
                 .inner_margin(egui::Margin::same(18.0))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         let (icon_rect, _) = ui.allocate_exact_size(egui::vec2(44.0, 44.0), egui::Sense::hover());
-                        ui.painter().rect_filled(icon_rect, 8.0, theme::BG_SUBTLE);
-                        ui.painter().rect_stroke(icon_rect, 8.0, egui::Stroke::new(1.0, theme::BORDER_CARD));
+                        ui.painter().rect_filled(icon_rect, 8.0, ltheme::BG_SUBTLE);
+                        ui.painter().rect_stroke(icon_rect, 8.0, egui::Stroke::new(1.0, ltheme::BORDER_CARD));
                         let c = icon_rect.center();
                         let pts = [
                             egui::pos2(c.x + 1.5, c.y - 12.0),
@@ -2204,7 +2208,7 @@ impl SettingsWindow {
                         ];
                         ui.painter().add(egui::Shape::convex_polygon(
                             pts.to_vec(),
-                            theme::STATUS_CHARGING,
+                            ltheme::STATUS_CHARGING,
                             egui::Stroke::NONE,
                         ));
 
@@ -2212,14 +2216,14 @@ impl SettingsWindow {
 
                         ui.vertical(|ui| {
                             ui.horizontal(|ui| {
-                                ui.label(egui::RichText::new("BatStat").color(theme::TEXT_PRIMARY).font(egui::FontId::proportional(16.0)).strong());
-                                ui.label(egui::RichText::new(concat!("v", env!("CARGO_PKG_VERSION"))).color(theme::TEXT_MUTED).font(egui::FontId::proportional(12.0)).strong());
+                                ui.label(egui::RichText::new("BatStat").color(ltheme::TEXT_PRIMARY).font(egui::FontId::proportional(16.0)).strong());
+                                ui.label(egui::RichText::new(concat!("v", env!("CARGO_PKG_VERSION"))).color(ltheme::TEXT_MUTED).font(egui::FontId::proportional(12.0)).strong());
                             });
-                            ui.label(egui::RichText::new("Lightweight Windows Peripheral Battery Monitor").color(theme::TEXT_SECONDARY).font(egui::FontId::proportional(11.0)));
+                            ui.label(egui::RichText::new("Lightweight Windows Peripheral Battery Monitor").color(ltheme::TEXT_SECONDARY).font(egui::FontId::proportional(11.0)));
                             ui.add_space(2.0);
                             ui.label(
                                 egui::RichText::new("Zero Bloat • Native Rust & Win32 HID Architecture • <15 MB RAM • 0% Idle CPU")
-                                    .color(theme::TEXT_DIM)
+                                    .color(ltheme::TEXT_DIM)
                                     .font(egui::FontId::proportional(9.5)),
                             );
                         });
@@ -2231,37 +2235,37 @@ impl SettingsWindow {
             // SOFTWARE UPDATES
             self.render_card_header(ui, "SOFTWARE UPDATES");
             egui::Frame::none()
-                .fill(theme::BG_CARD)
-                .stroke(egui::Stroke::new(1.0, theme::BORDER_CARD))
+                .fill(ltheme::BG_CARD)
+                .stroke(egui::Stroke::new(1.0, ltheme::BORDER_CARD))
                 .rounding(10.0)
                 .inner_margin(egui::Margin::same(14.0))
                 .show(ui, |ui| {
                     ui.vertical(|ui| {
                         ui.horizontal(|ui| {
                             ui.vertical(|ui| {
-                                ui.label(egui::RichText::new("Update Channel: Official GitHub Releases").color(theme::TEXT_PRIMARY).font(egui::FontId::proportional(12.5)));
+                                ui.label(egui::RichText::new("Update Channel: Official GitHub Releases").color(ltheme::TEXT_PRIMARY).font(egui::FontId::proportional(12.5)));
 
                                 match &self.update_status {
                                     crate::UpdateStatus::Idle => {
-                                        ui.label(egui::RichText::new(format!("Installed version: v{}", env!("CARGO_PKG_VERSION"))).color(theme::TEXT_MUTED).font(egui::FontId::proportional(10.0)));
+                                        ui.label(egui::RichText::new(format!("Installed version: v{}", env!("CARGO_PKG_VERSION"))).color(ltheme::TEXT_MUTED).font(egui::FontId::proportional(10.0)));
                                     }
                                     crate::UpdateStatus::Checking => {
-                                        ui.label(egui::RichText::new("Checking GitHub for latest release...").color(theme::TEXT_MUTED).font(egui::FontId::proportional(10.0)).italics());
+                                        ui.label(egui::RichText::new("Checking GitHub for latest release...").color(ltheme::TEXT_MUTED).font(egui::FontId::proportional(10.0)).italics());
                                     }
                                     crate::UpdateStatus::Available(info) => {
-                                        ui.label(egui::RichText::new(format!("Update Available: {}", info.tag_name)).color(theme::STATUS_ONLINE).font(egui::FontId::proportional(10.5)).strong());
+                                        ui.label(egui::RichText::new(format!("Update Available: {}", info.tag_name)).color(ltheme::STATUS_ONLINE).font(egui::FontId::proportional(10.5)).strong());
                                     }
                                     crate::UpdateStatus::NoUpdate => {
-                                        ui.label(egui::RichText::new("You are on the latest version of BatStat.").color(theme::STATUS_ONLINE).font(egui::FontId::proportional(10.0)));
+                                        ui.label(egui::RichText::new("You are on the latest version of BatStat.").color(ltheme::STATUS_ONLINE).font(egui::FontId::proportional(10.0)));
                                     }
                                     crate::UpdateStatus::Downloading(pct) => {
-                                        ui.label(egui::RichText::new(format!("Downloading update: {:.0}%", pct * 100.0)).color(theme::TEXT_PRIMARY).font(egui::FontId::proportional(10.0)).strong());
+                                        ui.label(egui::RichText::new(format!("Downloading update: {:.0}%", pct * 100.0)).color(ltheme::TEXT_PRIMARY).font(egui::FontId::proportional(10.0)).strong());
                                     }
                                     crate::UpdateStatus::ReadyToInstall(_) => {
-                                        ui.label(egui::RichText::new("Update ready to install. BatStat will restart.").color(theme::STATUS_ONLINE).font(egui::FontId::proportional(10.0)).strong());
+                                        ui.label(egui::RichText::new("Update ready to install. BatStat will restart.").color(ltheme::STATUS_ONLINE).font(egui::FontId::proportional(10.0)).strong());
                                     }
                                     crate::UpdateStatus::Error(e) => {
-                                        ui.label(egui::RichText::new(format!("Update check failed: {}", e)).color(theme::STATUS_LOW_ALERT).font(egui::FontId::proportional(10.0)));
+                                        ui.label(egui::RichText::new(format!("Update check failed: {}", e)).color(ltheme::STATUS_LOW_ALERT).font(egui::FontId::proportional(10.0)));
                                     }
                                 }
                             });
@@ -2273,11 +2277,11 @@ impl SettingsWindow {
                                         if let Some(asset) = msi_asset {
                                             let btn = egui::Button::new(
                                                 egui::RichText::new("Install Update")
-                                                    .color(theme::BTN_PRIMARY_TEXT)
+                                                    .color(ltheme::BTN_PRIMARY_TEXT)
                                                     .font(egui::FontId::proportional(11.0))
                                                     .strong(),
                                             )
-                                            .fill(theme::STATUS_ONLINE)
+                                            .fill(ltheme::STATUS_ONLINE)
                                             .rounding(6.0);
 
                                             if ui.add(btn).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
@@ -2286,11 +2290,11 @@ impl SettingsWindow {
                                         } else {
                                             let btn = egui::Button::new(
                                                 egui::RichText::new("View Release")
-                                                    .color(theme::BTN_PRIMARY_TEXT)
+                                                    .color(ltheme::BTN_PRIMARY_TEXT)
                                                     .font(egui::FontId::proportional(11.0))
                                                     .strong(),
                                             )
-                                            .fill(theme::BTN_PRIMARY_BG)
+                                            .fill(ltheme::BTN_PRIMARY_BG)
                                             .rounding(6.0);
 
                                             if ui.add(btn).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
@@ -2307,12 +2311,12 @@ impl SettingsWindow {
                                     _ => {
                                         let btn = egui::Button::new(
                                             egui::RichText::new("Check for Updates")
-                                                .color(theme::TEXT_PRIMARY)
+                                                .color(ltheme::TEXT_PRIMARY)
                                                 .font(egui::FontId::proportional(11.0))
                                                 .strong(),
                                         )
-                                        .fill(theme::BTN_SECONDARY_BG)
-                                        .stroke(egui::Stroke::new(1.0, theme::BORDER_CARD))
+                                        .fill(ltheme::BTN_SECONDARY_BG)
+                                        .stroke(egui::Stroke::new(1.0, ltheme::BORDER_CARD))
                                         .rounding(6.0);
 
                                         if ui.add(btn).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
@@ -2327,11 +2331,11 @@ impl SettingsWindow {
                         if let crate::UpdateStatus::Downloading(progress) = self.update_status {
                             ui.add_space(6.0);
                             let (bar_rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 6.0), egui::Sense::hover());
-                            ui.painter().rect_filled(bar_rect, 3.0, theme::BG_SUBTLE);
+                            ui.painter().rect_filled(bar_rect, 3.0, ltheme::BG_SUBTLE);
                             let fill_w = bar_rect.width() * progress.clamp(0.0, 1.0);
                             if fill_w > 0.0 {
                                 let fill_rect = egui::Rect::from_min_size(bar_rect.min, egui::vec2(fill_w, bar_rect.height()));
-                                ui.painter().rect_filled(fill_rect, 3.0, theme::STATUS_ONLINE);
+                                ui.painter().rect_filled(fill_rect, 3.0, ltheme::STATUS_ONLINE);
                             }
                         }
                     });
@@ -2347,8 +2351,8 @@ impl SettingsWindow {
             // PROJECT LINKS & REPO
             self.render_card_header(ui, "RESOURCES & COMMUNITY");
             egui::Frame::none()
-                .fill(theme::BG_CARD)
-                .stroke(egui::Stroke::new(1.0, theme::BORDER_CARD))
+                .fill(ltheme::BG_CARD)
+                .stroke(egui::Stroke::new(1.0, ltheme::BORDER_CARD))
                 .rounding(10.0)
                 .inner_margin(egui::Margin::same(14.0))
                 .show(ui, |ui| {
@@ -2386,8 +2390,8 @@ impl SettingsWindow {
         }
 
         egui::Frame::none()
-            .fill(theme::BG_CARD)
-            .stroke(egui::Stroke::new(1.0, theme::BORDER_CARD))
+            .fill(ltheme::BG_CARD)
+            .stroke(egui::Stroke::new(1.0, ltheme::BORDER_CARD))
             .rounding(10.0)
             .inner_margin(egui::Margin::same(12.0))
             .show(ui, |ui| {
@@ -2395,7 +2399,7 @@ impl SettingsWindow {
                     ui.horizontal(|ui| {
                         ui.label(
                             egui::RichText::new("Recent diagnostic output:")
-                                .color(theme::TEXT_MUTED)
+                                .color(ltheme::TEXT_MUTED)
                                 .font(egui::FontId::proportional(10.5)),
                         );
 
@@ -2434,8 +2438,8 @@ impl SettingsWindow {
                         .unwrap_or("No logs available.");
 
                     egui::Frame::none()
-                        .fill(theme::BG_SUBTLE)
-                        .stroke(egui::Stroke::new(1.0, theme::BORDER_SUBTLE))
+                        .fill(ltheme::BG_SUBTLE)
+                        .stroke(egui::Stroke::new(1.0, ltheme::BORDER_SUBTLE))
                         .rounding(6.0)
                         .inner_margin(egui::Margin::same(8.0))
                         .show(ui, |ui| {
@@ -2446,7 +2450,7 @@ impl SettingsWindow {
                                     ui.add(
                                         egui::Label::new(
                                             egui::RichText::new(log_str)
-                                                .color(theme::TEXT_MUTED)
+                                                .color(ltheme::TEXT_MUTED)
                                                 .font(egui::FontId::monospace(9.5)),
                                         )
                                         .wrap(),
@@ -2460,11 +2464,11 @@ impl SettingsWindow {
     fn render_card_header(&self, ui: &mut egui::Ui, title: &str) {
         ui.horizontal(|ui| {
             let (bar_rect, _) = ui.allocate_exact_size(egui::vec2(3.0, 14.0), egui::Sense::hover());
-            ui.painter().rect_filled(bar_rect, 1.5, theme::BORDER_FOCUS);
+            ui.painter().rect_filled(bar_rect, 1.5, ltheme::BORDER_FOCUS);
             ui.add_space(6.0);
             ui.label(
                 egui::RichText::new(title)
-                    .color(theme::TEXT_PRIMARY)
+                    .color(ltheme::TEXT_PRIMARY)
                     .font(egui::FontId::proportional(11.5))
                     .strong(),
             );
