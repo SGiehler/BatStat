@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DeviceConfig {
@@ -21,6 +21,8 @@ pub struct AppConfig {
     pub enable_debug_logging: bool,
     #[serde(default)]
     pub tray_battery_channel: Option<String>,
+    #[serde(default)]
+    pub custom_icons_dir: Option<String>,
     pub devices: Vec<DeviceConfig>,
 }
 
@@ -36,6 +38,7 @@ impl Default for AppConfig {
             enable_notifications: true,
             enable_debug_logging: false,
             tray_battery_channel: None,
+            custom_icons_dir: None,
             devices: Vec::new(),
         }
     }
@@ -104,19 +107,29 @@ pub fn get_icons_dir_path() -> Option<PathBuf> {
     })
 }
 
-pub fn get_icon_list() -> Vec<String> {
+pub fn resolve_icons_dir(config: &AppConfig) -> Option<PathBuf> {
+    if let Some(ref custom) = config.custom_icons_dir {
+        let trimmed = custom.trim();
+        if !trimmed.is_empty() {
+            return Some(PathBuf::from(trimmed));
+        }
+    }
+    get_icons_dir_path()
+}
+
+pub fn get_icon_list_for(config: &AppConfig) -> Vec<String> {
     let mut list = Vec::new();
-    if let Some(path) = get_icons_dir_path() {
+    if let Some(path) = resolve_icons_dir(config) {
         if let Ok(entries) = fs::read_dir(path) {
             for entry in entries.flatten() {
                 if let Ok(file_type) = entry.file_type() {
                     if file_type.is_file() {
                         let name = entry.file_name().to_string_lossy().into_owned();
-                        if name.ends_with(".png") || name.ends_with(".ico") {
-                            // Don't show ok.png in the low battery selection dropdown
-                            if name != "ok.png" {
-                                list.push(name);
-                            }
+                        let lower = name.to_ascii_lowercase();
+                        if (lower.ends_with(".png") || lower.ends_with(".ico"))
+                            && !name.eq_ignore_ascii_case("ok.png")
+                        {
+                            list.push(name);
                         }
                     }
                 }
@@ -125,6 +138,10 @@ pub fn get_icon_list() -> Vec<String> {
     }
     list.sort();
     list
+}
+
+pub fn get_icon_list() -> Vec<String> {
+    get_icon_list_for(&AppConfig::default())
 }
 
 fn colorize_icon(default_bytes: &[u8], color: image::Rgba<u8>) -> Vec<u8> {
@@ -141,46 +158,84 @@ fn colorize_icon(default_bytes: &[u8], color: image::Rgba<u8>) -> Vec<u8> {
     buffer.into_inner()
 }
 
-pub fn setup_icons_folder() {
-    if let Some(dir) = get_icons_dir_path() {
-        let _ = fs::create_dir_all(&dir);
-        
-        let defaults = vec![
-            ("ok.png", include_bytes!("icons/ok.png").to_vec()),
-            ("low_mouse.png", include_bytes!("icons/low_mouse.png").to_vec()),
-            ("low_gamepad.png", include_bytes!("icons/low_gamepad.png").to_vec()),
-            ("low_buds.png", include_bytes!("icons/low_buds.png").to_vec()),
-            ("low_keyboard.png", include_bytes!("icons/low_keyboard.png").to_vec()),
-        ];
-        
-        for (name, bytes) in defaults {
-            let path = dir.join(name);
+pub fn setup_icons_folder_at(dir: &Path) {
+    let _ = fs::create_dir_all(dir);
+
+    let defaults = vec![
+        ("ok.png", include_bytes!("icons/ok.png").to_vec()),
+        ("low_mouse.png", include_bytes!("icons/low_mouse.png").to_vec()),
+        ("low_gamepad.png", include_bytes!("icons/low_gamepad.png").to_vec()),
+        ("low_buds.png", include_bytes!("icons/low_buds.png").to_vec()),
+        ("low_keyboard.png", include_bytes!("icons/low_keyboard.png").to_vec()),
+    ];
+
+    for (name, bytes) in defaults {
+        let path = dir.join(name);
+        if !path.exists() {
             let _ = fs::write(path, bytes);
         }
-        
-        let color_variations = vec![
-            ("red", image::Rgba([218, 30, 40, 255])),     // #da1e28
-            ("orange", image::Rgba([247, 127, 0, 255])),  // Orange
-            ("yellow", image::Rgba([252, 191, 73, 255])), // Yellow
-            ("blue", image::Rgba([76, 201, 240, 255])),   // Electric Blue
-        ];
-        
-        let templates = vec![
-            ("mouse", include_bytes!("icons/low_mouse.png").to_vec()),
-            ("gamepad", include_bytes!("icons/low_gamepad.png").to_vec()),
-            ("buds", include_bytes!("icons/low_buds.png").to_vec()),
-            ("keyboard", include_bytes!("icons/low_keyboard.png").to_vec()),
-        ];
-        
-        for (color_name, rgba) in color_variations {
-            for (temp_name, temp_bytes) in &templates {
-                let filename = format!("low_{}_{}.png", temp_name, color_name);
-                let path = dir.join(&filename);
+    }
+
+    let color_variations = vec![
+        ("red", image::Rgba([218, 30, 40, 255])),     // #da1e28
+        ("orange", image::Rgba([247, 127, 0, 255])),  // Orange
+        ("yellow", image::Rgba([252, 191, 73, 255])), // Yellow
+        ("blue", image::Rgba([76, 201, 240, 255])),   // Electric Blue
+    ];
+
+    let templates = vec![
+        ("mouse", include_bytes!("icons/low_mouse.png").to_vec()),
+        ("gamepad", include_bytes!("icons/low_gamepad.png").to_vec()),
+        ("buds", include_bytes!("icons/low_buds.png").to_vec()),
+        ("keyboard", include_bytes!("icons/low_keyboard.png").to_vec()),
+    ];
+
+    for (color_name, rgba) in color_variations {
+        for (temp_name, temp_bytes) in &templates {
+            let filename = format!("low_{}_{}.png", temp_name, color_name);
+            let path = dir.join(&filename);
+            if !path.exists() {
                 let colorized = colorize_icon(temp_bytes, rgba);
                 let _ = fs::write(path, colorized);
             }
         }
     }
+}
+
+pub fn setup_icons_folder() {
+    if let Some(dir) = get_icons_dir_path() {
+        setup_icons_folder_at(&dir);
+    }
+}
+
+pub fn import_icon_file(src: &Path, icons_dir: &Path) -> Result<String, String> {
+    if !src.is_file() {
+        return Err("Selected icon file does not exist".to_string());
+    }
+    let file_name = src
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| "Invalid icon filename".to_string())?;
+    let lower = file_name.to_ascii_lowercase();
+    if !lower.ends_with(".png") && !lower.ends_with(".ico") {
+        return Err("Icon must be a .png or .ico image".to_string());
+    }
+
+    fs::create_dir_all(icons_dir)
+        .map_err(|e| format!("Failed to create icons directory: {}", e))?;
+    let dest = icons_dir.join(file_name);
+
+    let same_file = match (src.canonicalize(), dest.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => src == dest,
+    };
+
+    if !same_file {
+        fs::copy(src, &dest)
+            .map_err(|e| format!("Failed to copy icon into icons folder: {}", e))?;
+    }
+
+    Ok(file_name.to_string())
 }
 
 #[cfg(test)]
@@ -343,5 +398,65 @@ mod tests {
         assert_eq!(config.autostart, true);
         assert_eq!(config.enable_notifications, false);
         assert_eq!(config.enable_debug_logging, false);
+    }
+
+    #[test]
+    fn test_custom_icons_dir_resolution_and_serde_backcompat() {
+        let legacy_toml = r#"
+            polling_interval_secs = 60
+            autostart = false
+            devices = []
+        "#;
+        let mut cfg: super::AppConfig = toml::from_str(legacy_toml).unwrap();
+        assert_eq!(cfg.custom_icons_dir, None);
+        assert_eq!(super::resolve_icons_dir(&cfg), super::get_icons_dir_path());
+
+        cfg.custom_icons_dir = Some("C:\\CustomIcons\\BatStat".to_string());
+        assert_eq!(
+            super::resolve_icons_dir(&cfg),
+            Some(std::path::PathBuf::from("C:\\CustomIcons\\BatStat"))
+        );
+    }
+
+    #[test]
+    fn test_setup_icons_folder_seeds_missing_without_overwriting_existing() {
+        let temp = std::env::temp_dir().join(format!("batstat_test_icons_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp);
+        std::fs::create_dir_all(&temp).unwrap();
+
+        let custom_bytes = b"custom-user-icon-bytes";
+        std::fs::write(temp.join("low_mouse_red.png"), custom_bytes).unwrap();
+
+        super::setup_icons_folder_at(&temp);
+
+        // Existing customized file must NOT be overwritten
+        assert_eq!(std::fs::read(temp.join("low_mouse_red.png")).unwrap(), custom_bytes);
+        // Missing built-ins and variants must be seeded
+        assert!(temp.join("ok.png").exists());
+        assert!(temp.join("low_gamepad_blue.png").exists());
+
+        let _ = std::fs::remove_dir_all(&temp);
+    }
+
+    #[test]
+    fn test_import_custom_icon_validates_extension_and_copies_to_icons_dir() {
+        let temp = std::env::temp_dir().join(format!("batstat_import_test_{}", std::process::id()));
+        let src_dir = temp.join("external");
+        let icons_dir = temp.join("icons");
+        let _ = std::fs::remove_dir_all(&temp);
+        std::fs::create_dir_all(&src_dir).unwrap();
+        std::fs::create_dir_all(&icons_dir).unwrap();
+
+        let bad_file = src_dir.join("notes.txt");
+        std::fs::write(&bad_file, b"nope").unwrap();
+        assert!(super::import_icon_file(&bad_file, &icons_dir).is_err());
+
+        let good_file = src_dir.join("my_mouse.PNG");
+        std::fs::write(&good_file, b"png-data").unwrap();
+        let imported = super::import_icon_file(&good_file, &icons_dir).unwrap();
+        assert_eq!(imported, "my_mouse.PNG");
+        assert!(icons_dir.join("my_mouse.PNG").exists());
+
+        let _ = std::fs::remove_dir_all(&temp);
     }
 }
