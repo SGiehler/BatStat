@@ -218,6 +218,9 @@ pub fn import_icon_file(src: &Path, icons_dir: &Path) -> Result<String, String> 
         return Err("Icon must be a .png or .ico image".to_string());
     }
 
+    // Verify the file actually decodes as a valid PNG or ICO image before importing
+    image::open(src).map_err(|_| "Selected file is not a valid PNG or ICO image".to_string())?;
+
     fs::create_dir_all(icons_dir)
         .map_err(|e| format!("Failed to create icons directory: {}", e))?;
     let dest = icons_dir.join(file_name);
@@ -449,7 +452,7 @@ mod tests {
         assert!(super::import_icon_file(&bad_file, &icons_dir).is_err());
 
         let good_file = src_dir.join("my_mouse.PNG");
-        std::fs::write(&good_file, b"png-data").unwrap();
+        std::fs::write(&good_file, include_bytes!("icons/low_mouse.png")).unwrap();
         let imported = super::import_icon_file(&good_file, &icons_dir).unwrap();
         assert_eq!(imported, "my_mouse.PNG");
         assert!(icons_dir.join("my_mouse.PNG").exists());

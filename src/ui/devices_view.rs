@@ -1,8 +1,8 @@
-use crate::config::{get_icon_list_for, import_icon_file, resolve_icons_dir};
+use crate::config::{import_icon_file, resolve_icons_dir};
 use crate::plugins::{BatteryChannel, ChannelType, DeviceBatteryStatus};
 use crate::ui::theme::{self, ActionIcon, DeviceKind};
 use crate::ui::widgets;
-use crate::ui::{format_icon_label, get_device_category, reorder_devices, SettingsWindow};
+use crate::ui::{format_icon_label, get_device_category, truncate_text_to_width, SettingsWindow};
 use eframe::egui::{self, Color32, Pos2, Rect, Rounding, Sense, Stroke, Vec2};
 use std::time::Instant;
 
@@ -58,8 +58,7 @@ pub fn render_devices_view(win: &mut SettingsWindow, ui: &mut egui::Ui) {
                             .find(|d| d.unique_id == expanded_id)
                         {
                             dev.low_battery_icon_path = Some(filename.clone());
-                            win.icon_textures.clear();
-                            win.loaded_icons_dir = None;
+                            win.invalidate_icon_cache();
                             win.mark_dirty_immediate();
                             win.show_toast(&format!("Alert icon set to {}", filename));
                         }
@@ -91,7 +90,8 @@ pub fn render_devices_view(win: &mut SettingsWindow, ui: &mut egui::Ui) {
         }
     }
 
-    let mut item_rects: Vec<(usize, Rect)> = Vec::with_capacity(win.config.devices.len());
+    let mut online_rects: Vec<(usize, Rect)> = Vec::with_capacity(online_indices.len());
+    let mut offline_rects: Vec<(usize, Rect)> = Vec::with_capacity(offline_indices.len());
     let mut remove_idx: Option<usize> = None;
 
     for (pos, &idx) in online_indices.iter().enumerate() {
@@ -99,7 +99,7 @@ pub fn render_devices_view(win: &mut SettingsWindow, ui: &mut egui::Ui) {
             ui.add_space(7.0);
         }
         let rect = render_online_device_card(win, ui, idx, &mut remove_idx);
-        item_rects.push((idx, rect));
+        online_rects.push((idx, rect));
     }
 
     if !offline_indices.is_empty() {
@@ -132,7 +132,7 @@ pub fn render_devices_view(win: &mut SettingsWindow, ui: &mut egui::Ui) {
                 ui.add_space(5.0);
             }
             let rect = render_offline_device_row(win, ui, idx, &mut remove_idx);
-            item_rects.push((idx, rect));
+            offline_rects.push((idx, rect));
         }
     }
 
@@ -149,34 +149,13 @@ pub fn render_devices_view(win: &mut SettingsWindow, ui: &mut egui::Ui) {
         }
     }
 
-    // Live drag-to-reorder across `win.config.devices`
+    // Live drag-to-reorder within the active or offline section (without cross-section oscillation)
     if let Some(drag_id) = win.dragging_device_id.clone() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
         if let Some(pointer_pos) = ui.ctx().input(|i| i.pointer.interact_pos()) {
-            if let Some(from_idx) = win
-                .config
-                .devices
-                .iter()
-                .position(|d| d.unique_id == drag_id)
+            if win.apply_section_drag_reorder(&drag_id, pointer_pos.y, &online_rects, &offline_rects)
             {
-                let mut target_swap: Option<usize> = None;
-                for &(other_idx, rect) in &item_rects {
-                    if other_idx == from_idx {
-                        continue;
-                    }
-                    if from_idx < other_idx && pointer_pos.y > rect.center().y {
-                        target_swap = Some(other_idx);
-                    } else if from_idx > other_idx && pointer_pos.y < rect.center().y {
-                        target_swap = Some(other_idx);
-                        break;
-                    }
-                }
-                if let Some(to_idx) = target_swap {
-                    if reorder_devices(&mut win.config.devices, from_idx, to_idx) {
-                        win.drag_reordered = true;
-                        ui.ctx().request_repaint();
-                    }
-                }
+                ui.ctx().request_repaint();
             }
         }
 
@@ -354,20 +333,28 @@ fn render_online_device_card(
 
                             ui.add_space(4.0);
 
-                            // Clickable title & status subtitle area
+                            // Clickable title & status subtitle area (clipped + ellipsized)
                             let right_reserve = if active_channels.len() <= 1 { 68.0 } else { 22.0 };
                             let title_w = (ui.available_width() - right_reserve).max(60.0);
                             let (title_rect, title_resp) = ui.allocate_exact_size(
                                 Vec2::new(title_w, 30.0),
                                 Sense::click(),
                             );
+                            let name_font = egui::FontId::proportional(13.0);
+                            let (display_name, name_truncated) = truncate_text_to_width(
+                                ui.painter(),
+                                &dev_snapshot.name,
+                                name_font.clone(),
+                                (title_rect.width() - 4.0).max(24.0),
+                            );
+                            let title_painter = ui.painter_at(title_rect);
 
                             if is_low || any_charging {
-                                ui.painter().text(
+                                title_painter.text(
                                     Pos2::new(title_rect.left(), title_rect.top() + 7.5),
                                     egui::Align2::LEFT_CENTER,
-                                    &dev_snapshot.name,
-                                    egui::FontId::proportional(13.0),
+                                    &display_name,
+                                    name_font,
                                     theme::TEXT_PRIMARY,
                                 );
                                 let (sub_text, sub_col) = if any_charging {
@@ -378,14 +365,14 @@ fn render_online_device_card(
                                 let mut text_x = title_rect.left();
                                 if any_charging {
                                     theme::draw_bolt(
-                                        ui.painter(),
+                                        &title_painter,
                                         Pos2::new(text_x + 3.5, title_rect.bottom() - 6.0),
                                         0.85,
                                         theme::ACCENT_CHARGING,
                                     );
                                     text_x += 10.0;
                                 }
-                                ui.painter().text(
+                                title_painter.text(
                                     Pos2::new(text_x, title_rect.bottom() - 6.0),
                                     egui::Align2::LEFT_CENTER,
                                     sub_text,
@@ -393,14 +380,15 @@ fn render_online_device_card(
                                     sub_col,
                                 );
                             } else {
-                                ui.painter().text(
+                                title_painter.text(
                                     Pos2::new(title_rect.left(), title_rect.center().y),
                                     egui::Align2::LEFT_CENTER,
-                                    &dev_snapshot.name,
-                                    egui::FontId::proportional(13.0),
+                                    &display_name,
+                                    name_font,
                                     theme::TEXT_PRIMARY,
                                 );
                             }
+                            let title_hovered = title_resp.hovered();
 
                             // Right side: Hero `%` (for single-channel) + expand chevron
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -410,7 +398,7 @@ fn render_online_device_card(
                                     ui.painter(),
                                     chev_rect.center(),
                                     is_expanded,
-                                    if chev_resp.hovered() || title_resp.hovered() {
+                                    if chev_resp.hovered() || title_hovered {
                                         theme::TEXT_PRIMARY
                                     } else {
                                         theme::TEXT_DIM
@@ -449,7 +437,10 @@ fn render_online_device_card(
                             if title_resp.clicked() {
                                 toggle_drawer(win, &dev_snapshot.unique_id);
                             }
-                            title_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                            let title_resp = title_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                            if name_truncated {
+                                title_resp.on_hover_text(&dev_snapshot.name);
+                            }
                         });
                         let _ = header_resp;
 
@@ -637,18 +628,28 @@ fn render_offline_device_row(
                         let row_w = (ui.available_width() - 78.0).max(60.0);
                         let (name_rect, name_resp) =
                             ui.allocate_exact_size(Vec2::new(row_w, 22.0), Sense::click());
-                        ui.painter().text(
+                        let name_font = egui::FontId::proportional(12.5);
+                        let (display_name, name_truncated) = truncate_text_to_width(
+                            ui.painter(),
+                            &dev_snapshot.name,
+                            name_font.clone(),
+                            (name_rect.width() - 6.0).max(24.0),
+                        );
+                        ui.painter_at(name_rect).text(
                             Pos2::new(name_rect.left() + 2.0, name_rect.center().y),
                             egui::Align2::LEFT_CENTER,
-                            &dev_snapshot.name,
-                            egui::FontId::proportional(12.5),
+                            &display_name,
+                            name_font,
                             theme::TEXT_MUTED,
                         );
                         if name_resp.clicked() {
                             toggle_drawer(win, &dev_snapshot.unique_id);
                         }
                         let name_hovered = name_resp.hovered();
-                        name_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                        let name_resp = name_resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                        if name_truncated {
+                            name_resp.on_hover_text(&dev_snapshot.name);
+                        }
 
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             let (chev_rect, chev_resp) =
@@ -875,7 +876,7 @@ fn render_device_drawer(
                 });
                 ui.add_space(4.0);
 
-                let icon_list = get_icon_list_for(&win.config);
+                let icon_list = win.cached_icon_list.clone();
                 let current_icon = win.config.devices[idx].low_battery_icon_path.clone();
                 let default_preview_key = match base_type {
                     "mouse" | "gamepad" | "buds" | "keyboard" => format!("low_{}.png", base_type),
@@ -1031,12 +1032,12 @@ fn render_device_drawer(
                 }
 
                 if trigger_browse {
-                    win.suppress_focus_hide = true;
+                    win.begin_modal_dialog(ui.ctx());
                     let picked = rfd::FileDialog::new()
                         .set_title("Choose Low-Battery Tray Icon")
                         .add_filter("Icon Images", &["png", "ico"])
                         .pick_file();
-                    win.suppress_focus_hide = false;
+                    win.end_modal_dialog(ui.ctx());
 
                     if let Some(src_path) = picked {
                         if let Some(icons_dir) = resolve_icons_dir(&win.config) {
@@ -1044,8 +1045,7 @@ fn render_device_drawer(
                                 Ok(imported_name) => {
                                     win.config.devices[idx].low_battery_icon_path =
                                         Some(imported_name.clone());
-                                    win.icon_textures.clear();
-                                    win.loaded_icons_dir = None;
+                                    win.invalidate_icon_cache();
                                     win.mark_dirty_immediate();
                                     win.show_toast(&format!("Imported {}", imported_name));
                                 }

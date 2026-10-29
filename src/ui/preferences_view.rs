@@ -149,7 +149,7 @@ pub fn render_preferences_view(win: &mut SettingsWindow, ui: &mut egui::Ui) {
                     );
                     ui.add_space(8.0);
 
-                    // Poll interval segmented selector
+                    // Poll interval segmented selector (+ custom interval badge if non-standard)
                     ui.horizontal(|ui| {
                         ui.label(
                             egui::RichText::new("Poll interval")
@@ -167,6 +167,27 @@ pub fn render_preferences_view(win: &mut SettingsWindow, ui: &mut egui::Ui) {
                                     "Polling every {}s",
                                     win.config.polling_interval_secs
                                 ));
+                            }
+                            if !matches!(win.config.polling_interval_secs, 15 | 30 | 60) {
+                                egui::Frame::none()
+                                    .fill(theme::ACCENT_ONLINE_BG)
+                                    .stroke(Stroke::new(
+                                        1.0,
+                                        theme::ACCENT_ONLINE.linear_multiply(0.45),
+                                    ))
+                                    .rounding(Rounding::same(5.0))
+                                    .inner_margin(egui::Margin::symmetric(6.0, 2.0))
+                                    .show(ui, |ui| {
+                                        ui.label(
+                                            egui::RichText::new(format!(
+                                                "{}s",
+                                                win.config.polling_interval_secs
+                                            ))
+                                            .color(theme::ACCENT_ONLINE)
+                                            .font(egui::FontId::monospace(10.0))
+                                            .strong(),
+                                        );
+                                    });
                             }
                         });
                     });
@@ -196,12 +217,12 @@ pub fn render_preferences_view(win: &mut SettingsWindow, ui: &mut egui::Ui) {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             let mut autostart = win.config.autostart;
                             if widgets::toggle_switch(ui, &mut autostart).changed() {
-                                win.config.autostart = autostart;
-                                win.mark_dirty_immediate();
                                 if let Err(e) = set_autostart(autostart) {
                                     eprintln!("Failed to set autostart: {}", e);
                                     win.show_toast("Failed to update startup registry");
                                 } else {
+                                    win.config.autostart = autostart;
+                                    win.mark_dirty_immediate();
                                     win.show_toast(if autostart {
                                         "Launch at login enabled"
                                     } else {
@@ -389,8 +410,7 @@ pub fn render_preferences_view(win: &mut SettingsWindow, ui: &mut egui::Ui) {
                                 .clicked()
                         {
                             win.config.custom_icons_dir = None;
-                            win.icon_textures.clear();
-                            win.loaded_icons_dir = None;
+                            win.invalidate_icon_cache();
                             win.mark_dirty_immediate();
                             win.show_toast("Reset to default icons folder");
                         }
@@ -422,7 +442,7 @@ pub fn render_preferences_view(win: &mut SettingsWindow, ui: &mut egui::Ui) {
                     });
 
                     if pick_icons_folder {
-                        win.suppress_focus_hide = true;
+                        win.begin_modal_dialog(ui.ctx());
                         let mut dialog =
                             rfd::FileDialog::new().set_title("Select BatStat Icons Folder");
                         if let Some(ref dir) = resolved_dir {
@@ -431,14 +451,13 @@ pub fn render_preferences_view(win: &mut SettingsWindow, ui: &mut egui::Ui) {
                             }
                         }
                         let chosen = dialog.pick_folder();
-                        win.suppress_focus_hide = false;
+                        win.end_modal_dialog(ui.ctx());
 
                         if let Some(folder) = chosen {
                             setup_icons_folder_at(&folder);
                             win.config.custom_icons_dir =
                                 Some(folder.to_string_lossy().into_owned());
-                            win.icon_textures.clear();
-                            win.loaded_icons_dir = None;
+                            win.invalidate_icon_cache();
                             win.mark_dirty_immediate();
                             win.show_toast("Icons folder updated");
                         }
@@ -569,6 +588,26 @@ pub fn render_preferences_view(win: &mut SettingsWindow, ui: &mut egui::Ui) {
                                         win.request_update_check = true;
                                     }
                                 }
+                            }
+
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        egui::RichText::new("GitHub")
+                                            .color(theme::TEXT_MUTED)
+                                            .font(egui::FontId::proportional(10.5)),
+                                    )
+                                    .fill(theme::BG_SUBTLE)
+                                    .stroke(Stroke::new(1.0, theme::BORDER_CARD))
+                                    .rounding(Rounding::same(6.0)),
+                                )
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .on_hover_text("Open BatStat repository on GitHub")
+                                .clicked()
+                            {
+                                let _ = std::process::Command::new("explorer")
+                                    .arg("https://github.com/SGiehler/BatStat")
+                                    .spawn();
                             }
                         });
                     });

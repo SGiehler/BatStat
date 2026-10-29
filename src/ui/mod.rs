@@ -16,6 +16,45 @@ pub enum FlyoutView {
     Preferences,
 }
 
+/// Truncates `text` with `'…'` if its rendered width exceeds `max_width`.
+/// Returns `(display_string, was_truncated)`.
+pub fn truncate_text_to_width(
+    painter: &egui::Painter,
+    text: &str,
+    font: egui::FontId,
+    max_width: f32,
+) -> (String, bool) {
+    if text.is_empty() {
+        return (String::new(), false);
+    }
+    if max_width <= 0.0 {
+        return ("…".to_string(), true);
+    }
+    let full = painter.layout_no_wrap(text.to_string(), font.clone(), Color32::WHITE);
+    if full.size().x <= max_width {
+        return (text.to_string(), false);
+    }
+
+    let chars: Vec<char> = text.chars().collect();
+    let mut low = 0usize;
+    let mut high = chars.len();
+    while low < high {
+        let mid = (low + high + 1) / 2;
+        let mut candidate: String = chars[..mid].iter().collect();
+        candidate.push('…');
+        let g = painter.layout_no_wrap(candidate, font.clone(), Color32::WHITE);
+        if g.size().x <= max_width {
+            low = mid;
+        } else {
+            high = mid - 1;
+        }
+    }
+
+    let mut out: String = chars[..low].iter().collect();
+    out.push('…');
+    (out, true)
+}
+
 /// Reorders `devices` by moving `from_idx` to `to_idx`. Returns `true` if order changed.
 pub fn reorder_devices(devices: &mut Vec<DeviceConfig>, from_idx: usize, to_idx: usize) -> bool {
     if from_idx >= devices.len() || to_idx >= devices.len() || from_idx == to_idx {
@@ -129,6 +168,7 @@ pub struct SettingsWindow {
     pub is_pinned: bool,
     pub has_custom_position: bool,
     pub suppress_focus_hide: bool,
+    pub reclaim_focus_after_dialog: bool,
 
     // 100% Auto-save coordinator
     pub save_immediately: bool,
@@ -154,7 +194,11 @@ pub struct SettingsWindow {
 
     // Textures & visual polish
     pub icon_textures: std::collections::HashMap<String, egui::TextureHandle>,
+    pub failed_icons: std::collections::HashSet<String>,
+    pub cached_icon_list: Vec<String>,
     pub loaded_icons_dir: Option<PathBuf>,
+    pub icons_loaded: bool,
+    pub icon_dir_scan_count: usize,
     pub scanning_timer: Option<Instant>,
     pub toast: Option<(String, Instant)>,
     pub fonts_initialized: bool,
@@ -166,7 +210,7 @@ impl SettingsWindow {
         active_devices: Vec<String>,
         device_statuses: std::collections::HashMap<String, DeviceBatteryStatus>,
     ) -> Self {
-        config.polling_interval_secs = config.polling_interval_secs.clamp(1, 60);
+        config.polling_interval_secs = config.polling_interval_secs.max(1);
         Self {
             config,
             active_devices,
@@ -181,6 +225,7 @@ impl SettingsWindow {
             is_pinned: false,
             has_custom_position: false,
             suppress_focus_hide: false,
+            reclaim_focus_after_dialog: false,
 
             save_immediately: false,
             save_on_release: false,
@@ -202,11 +247,94 @@ impl SettingsWindow {
             debug_log_content: None,
 
             icon_textures: std::collections::HashMap::new(),
+            failed_icons: std::collections::HashSet::new(),
+            cached_icon_list: Vec::new(),
             loaded_icons_dir: None,
+            icons_loaded: false,
+            icon_dir_scan_count: 0,
             scanning_timer: None,
             toast: None,
             fonts_initialized: false,
         }
+    }
+
+    pub fn new_with_fonts_ready(
+        config: AppConfig,
+        active_devices: Vec<String>,
+        device_statuses: std::collections::HashMap<String, DeviceBatteryStatus>,
+    ) -> Self {
+        let mut win = Self::new(config, active_devices, device_statuses);
+        win.fonts_initialized = true;
+        win
+    }
+
+    pub fn invalidate_icon_cache(&mut self) {
+        self.icon_textures.clear();
+        self.failed_icons.clear();
+        self.cached_icon_list.clear();
+        self.loaded_icons_dir = None;
+        self.icons_loaded = false;
+    }
+
+    pub fn begin_modal_dialog(&mut self, ctx: &egui::Context) {
+        self.suppress_focus_hide = true;
+        ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(egui::WindowLevel::Normal));
+    }
+
+    pub fn end_modal_dialog(&mut self, ctx: &egui::Context) {
+        self.suppress_focus_hide = false;
+        self.reclaim_focus_after_dialog = true;
+        ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
+            egui::WindowLevel::AlwaysOnTop,
+        ));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+    }
+
+    pub fn apply_section_drag_reorder(
+        &mut self,
+        drag_id: &str,
+        pointer_y: f32,
+        online_rects: &[(usize, Rect)],
+        offline_rects: &[(usize, Rect)],
+    ) -> bool {
+        let Some(from_idx) = self
+            .config
+            .devices
+            .iter()
+            .position(|d| d.unique_id == drag_id)
+        else {
+            return false;
+        };
+
+        let section_rects = if online_rects.iter().any(|(idx, _)| *idx == from_idx) {
+            online_rects
+        } else if offline_rects.iter().any(|(idx, _)| *idx == from_idx) {
+            offline_rects
+        } else {
+            return false;
+        };
+
+        let mut target_swap: Option<usize> = None;
+        for &(other_idx, rect) in section_rects {
+            if other_idx == from_idx {
+                continue;
+            }
+            if from_idx < other_idx && pointer_y > rect.center().y {
+                target_swap = Some(other_idx);
+            } else if from_idx > other_idx && pointer_y < rect.center().y {
+                target_swap = Some(other_idx);
+                break;
+            }
+        }
+
+        if let Some(to_idx) = target_swap {
+            if reorder_devices(&mut self.config.devices, from_idx, to_idx) {
+                self.drag_reordered = true;
+                self.mark_dirty_on_release();
+                return true;
+            }
+        }
+        false
     }
 
     pub fn mark_dirty_immediate(&mut self) {
@@ -310,7 +438,7 @@ impl SettingsWindow {
     }
 
     pub fn handle_shortcuts(&mut self, ctx: &egui::Context) {
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) && !ctx.memory(|m| m.any_popup_open()) {
             self.handle_escape_press();
         }
         if ctx.input(|i| {
@@ -324,55 +452,60 @@ impl SettingsWindow {
 
     pub fn ensure_textures(&mut self, ctx: &egui::Context) {
         let active_dir = resolve_icons_dir(&self.config);
-        if self.loaded_icons_dir != active_dir {
-            self.icon_textures.clear();
-            self.loaded_icons_dir = active_dir.clone();
-        }
-
-        let icon_list = get_icon_list_for(&self.config);
-        let needs_load = self.icon_textures.is_empty()
-            || icon_list
-                .iter()
-                .any(|name| !self.icon_textures.contains_key(name));
-
-        if !needs_load {
+        if self.icons_loaded && self.loaded_icons_dir == active_dir {
             return;
         }
+
+        self.icon_textures.clear();
+        self.failed_icons.clear();
+        self.cached_icon_list.clear();
+        self.loaded_icons_dir = active_dir.clone();
+        self.icons_loaded = true;
+        self.icon_dir_scan_count += 1;
 
         #[cfg(not(test))]
         if let Some(ref dir) = active_dir {
             crate::config::setup_icons_folder_at(dir);
         }
 
+        let candidate_files = get_icon_list_for(&self.config);
+        let mut valid_list = Vec::with_capacity(candidate_files.len());
+
         // Load files from active icons directory first so customized files take priority
         if let Some(ref icons_dir) = active_dir {
-            if let Ok(entries) = std::fs::read_dir(icons_dir) {
-                for entry in entries.flatten() {
-                    if let Ok(ft) = entry.file_type() {
-                        if ft.is_file() {
-                            let name = entry.file_name().to_string_lossy().into_owned();
-                            let lower = name.to_ascii_lowercase();
-                            if !self.icon_textures.contains_key(&name)
-                                && (lower.ends_with(".png") || lower.ends_with(".ico"))
-                            {
-                                let path = icons_dir.join(&name);
-                                if let Ok(img) = image::open(&path) {
-                                    let size = [img.width() as usize, img.height() as usize];
-                                    let rgba = img.to_rgba8();
-                                    let color_img = egui::ColorImage::from_rgba_unmultiplied(
-                                        size,
-                                        rgba.as_flat_samples().as_slice(),
-                                    );
-                                    let tex = ctx.load_texture(
-                                        &name,
-                                        color_img,
-                                        egui::TextureOptions::default(),
-                                    );
-                                    self.icon_textures.insert(name, tex);
-                                }
-                            }
-                        }
+            for name in candidate_files {
+                let path = icons_dir.join(&name);
+                match image::open(&path) {
+                    Ok(img) => {
+                        let size = [img.width() as usize, img.height() as usize];
+                        let rgba = img.to_rgba8();
+                        let color_img = egui::ColorImage::from_rgba_unmultiplied(
+                            size,
+                            rgba.as_flat_samples().as_slice(),
+                        );
+                        let tex =
+                            ctx.load_texture(&name, color_img, egui::TextureOptions::default());
+                        self.icon_textures.insert(name.clone(), tex);
+                        valid_list.push(name);
                     }
+                    Err(_) => {
+                        self.failed_icons.insert(name);
+                    }
+                }
+            }
+
+            let ok_path = icons_dir.join("ok.png");
+            if ok_path.is_file() {
+                if let Ok(img) = image::open(&ok_path) {
+                    let size = [img.width() as usize, img.height() as usize];
+                    let rgba = img.to_rgba8();
+                    let color_img = egui::ColorImage::from_rgba_unmultiplied(
+                        size,
+                        rgba.as_flat_samples().as_slice(),
+                    );
+                    let tex =
+                        ctx.load_texture("ok.png", color_img, egui::TextureOptions::default());
+                    self.icon_textures.insert("ok.png".to_string(), tex);
                 }
             }
         }
@@ -403,6 +536,8 @@ impl SettingsWindow {
                 }
             }
         }
+
+        self.cached_icon_list = valid_list;
     }
 
     pub fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -974,5 +1109,158 @@ mod tests {
         win.view = FlyoutView::Preferences;
         win.logs_expanded = true;
         let _ = ctx.run(egui::RawInput::default(), |ctx| win.render_flyout(ctx));
+    }
+
+    #[test]
+    fn test_ico_decoding_and_corrupt_icon_skip_without_retry() {
+        let temp_dir = std::env::temp_dir().join(format!("batstat_ico_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+
+        // Build a valid PNG-backed 16x16 32-bit .ico file from built-in ok.png
+        let png_bytes = include_bytes!("../icons/ok.png");
+        let mut ico_bytes = Vec::with_capacity(22 + png_bytes.len());
+        ico_bytes.extend_from_slice(&[0, 0, 1, 0, 1, 0]); // ICONDIR: 1 icon
+        ico_bytes.extend_from_slice(&[16, 16, 0, 0, 1, 0, 32, 0]); // 16x16, 1 plane, 32bpp
+        ico_bytes.extend_from_slice(&(png_bytes.len() as u32).to_le_bytes());
+        ico_bytes.extend_from_slice(&22u32.to_le_bytes());
+        ico_bytes.extend_from_slice(png_bytes);
+
+        let ico_path = temp_dir.join("alert.ico");
+        std::fs::write(&ico_path, &ico_bytes).unwrap();
+
+        let corrupt_path = temp_dir.join("broken.png");
+        std::fs::write(&corrupt_path, b"not-an-image").unwrap();
+
+        // Tray icon loader must decode .ico
+        assert!(crate::load_icon_from_file(&ico_path.to_string_lossy()).is_ok());
+        // Importer must reject unreadable image data
+        assert!(crate::config::import_icon_file(&corrupt_path, &temp_dir).is_err());
+
+        let ctx = egui::Context::default();
+        let mut cfg = AppConfig::default();
+        cfg.custom_icons_dir = Some(temp_dir.to_string_lossy().into_owned());
+        let mut win = SettingsWindow::new(cfg, vec![], std::collections::HashMap::new());
+
+        let _ = ctx.run(egui::RawInput::default(), |ctx| win.ensure_textures(ctx));
+        assert!(win.icon_textures.contains_key("alert.ico"));
+        assert!(win.failed_icons.contains("broken.png"));
+        let scans_after_first = win.icon_dir_scan_count;
+
+        // Subsequent frame must not re-scan or retry broken.png
+        let _ = ctx.run(egui::RawInput::default(), |ctx| win.ensure_textures(ctx));
+        assert_eq!(win.icon_dir_scan_count, scans_after_first);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_drag_reorder_with_preceding_offline_device_does_not_oscillate_and_marks_dirty() {
+        let mut cfg = AppConfig::default();
+        cfg.devices = vec![
+            DeviceConfig { unique_id: "xbox_offline".into(), name: "Xbox".into(), enabled: true, threshold: 20, low_battery_icon_path: None },
+            DeviceConfig { unique_id: "mouse_online".into(), name: "Mouse".into(), enabled: true, threshold: 20, low_battery_icon_path: None },
+            DeviceConfig { unique_id: "buds_online".into(), name: "Buds".into(), enabled: true, threshold: 20, low_battery_icon_path: None },
+        ];
+        let mut win = SettingsWindow::new(cfg, vec!["mouse_online".into(), "buds_online".into()], std::collections::HashMap::new());
+
+        let r_top = egui::Rect::from_min_max(egui::pos2(0.0, 60.0), egui::pos2(350.0, 120.0));
+        let r_mid = egui::Rect::from_min_max(egui::pos2(0.0, 130.0), egui::pos2(350.0, 190.0));
+        let r_bot_offline = egui::Rect::from_min_max(egui::pos2(0.0, 230.0), egui::pos2(350.0, 268.0));
+
+        // Frame 1: dragging `mouse_online` (idx 1, online) downward past `buds_online` (idx 2, center y=160) at y=175
+        let online_rects_f1 = vec![(1usize, r_top), (2usize, r_mid)];
+        let offline_rects_f1 = vec![(0usize, r_bot_offline)];
+        assert!(win.apply_section_drag_reorder("mouse_online", 175.0, &online_rects_f1, &offline_rects_f1));
+        assert!(win.save_on_release);
+        let ids_f1: Vec<&str> = win.config.devices.iter().map(|d| d.unique_id.as_str()).collect();
+        assert_eq!(ids_f1, vec!["xbox_offline", "buds_online", "mouse_online"]);
+
+        // Frame 2: pointer still at y=175 (above offline Xbox at y=249) — must NOT oscillate back to idx 0!
+        let online_rects_f2 = vec![(1usize, r_top), (2usize, r_mid)];
+        let offline_rects_f2 = vec![(0usize, r_bot_offline)];
+        assert!(!win.apply_section_drag_reorder("mouse_online", 175.0, &online_rects_f2, &offline_rects_f2));
+        let ids_f2: Vec<&str> = win.config.devices.iter().map(|d| d.unique_id.as_str()).collect();
+        assert_eq!(ids_f2, vec!["xbox_offline", "buds_online", "mouse_online"]);
+    }
+
+    #[test]
+    fn test_long_device_name_truncates_within_title_width() {
+        let ctx = egui::Context::default();
+        let mut truncated = String::new();
+        let mut did_truncate = false;
+        let mut measured_w = 0.0;
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let font = egui::FontId::proportional(13.0);
+                let (s, was_trunc) = truncate_text_to_width(
+                    ui.painter(),
+                    "SteelSeries Arctis GameBuds Ultra Wireless Edition",
+                    font.clone(),
+                    130.0,
+                );
+                let galley = ui.painter().layout_no_wrap(s.clone(), font, egui::Color32::WHITE);
+                measured_w = galley.size().x;
+                truncated = s;
+                did_truncate = was_trunc;
+            });
+        });
+        assert!(did_truncate);
+        assert!(truncated.ends_with('…'));
+        assert!(measured_w <= 130.5, "measured width {} exceeded 130px", measured_w);
+    }
+
+    #[test]
+    fn test_icon_list_cached_across_frames_without_rescanning_disk() {
+        let temp_dir = std::env::temp_dir().join(format!("batstat_cache_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        crate::config::setup_icons_folder_at(&temp_dir);
+
+        let ctx = egui::Context::default();
+        let mut cfg = AppConfig::default();
+        cfg.custom_icons_dir = Some(temp_dir.to_string_lossy().into_owned());
+        cfg.devices.push(DeviceConfig {
+            unique_id: "pulsar_1".into(),
+            name: "Pulsar".into(),
+            enabled: true,
+            threshold: 20,
+            low_battery_icon_path: None,
+        });
+        let mut win = SettingsWindow::new_with_fonts_ready(cfg, vec![], std::collections::HashMap::new());
+        assert!(win.fonts_initialized);
+        win.expanded_device_id = Some("pulsar_1".into());
+
+        for _ in 0..4 {
+            let _ = ctx.run(egui::RawInput::default(), |ctx| win.render_flyout(ctx));
+        }
+        assert_eq!(win.icon_dir_scan_count, 1);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_preferences_preserves_custom_poll_interval_and_popup_blocks_escape() {
+        let ctx = egui::Context::default();
+        let mut cfg = AppConfig::default();
+        cfg.polling_interval_secs = 90;
+        let mut win = SettingsWindow::new(cfg, vec![], std::collections::HashMap::new());
+        assert_eq!(win.config.polling_interval_secs, 90);
+
+        win.expanded_device_id = Some("pulsar_1".into());
+        let popup_id = egui::Id::new("test_combo_popup");
+        ctx.memory_mut(|m| m.open_popup(popup_id));
+
+        let mut raw = egui::RawInput::default();
+        raw.events.push(egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        let _ = ctx.run(raw, |ctx| win.handle_shortcuts(ctx));
+        // Popup was open, so drawer must remain expanded!
+        assert!(win.expanded_device_id.is_some());
     }
 }

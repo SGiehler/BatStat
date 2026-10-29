@@ -8,9 +8,9 @@ use windows_sys::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    FindWindowW, GetCursorPos, GetWindowLongPtrW, GetWindowRect, SetForegroundWindow,
-    SetWindowLongPtrW, SetWindowPos, ShowWindow, GWL_EXSTYLE, SWP_NOSIZE, SWP_NOZORDER,
-    SWP_SHOWWINDOW, SW_HIDE, SW_SHOW, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
+    FindWindowExW, GetCursorPos, GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId,
+    SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow, GWL_EXSTYLE, SWP_NOSIZE,
+    SWP_NOZORDER, SWP_SHOWWINDOW, SW_HIDE, SW_SHOW, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
 };
 
 pub const WINDOW_TITLE: &str = "BatStat";
@@ -98,18 +98,56 @@ pub fn should_open_on_tray_click(
     true
 }
 
-pub fn find_flyout_window() -> Option<HWND> {
+pub fn window_matches_pid(hwnd: HWND, expected_pid: u32) -> bool {
+    if hwnd.is_null() {
+        return false;
+    }
+    let mut win_pid: u32 = 0;
+    unsafe {
+        GetWindowThreadProcessId(hwnd, &mut win_pid);
+    }
+    win_pid == expected_pid
+}
+
+pub fn find_flyout_window_for_pid(expected_pid: u32) -> Option<HWND> {
     use std::os::windows::ffi::OsStrExt;
     let title: Vec<u16> = std::ffi::OsStr::new(WINDOW_TITLE)
         .encode_wide()
         .chain(std::iter::once(0))
         .collect();
-    let hwnd = unsafe { FindWindowW(std::ptr::null(), title.as_ptr()) };
-    if hwnd.is_null() {
-        None
-    } else {
-        Some(hwnd)
+
+    let mut prev: HWND = std::ptr::null_mut();
+    loop {
+        let hwnd = unsafe {
+            FindWindowExW(
+                std::ptr::null_mut(),
+                prev,
+                std::ptr::null(),
+                title.as_ptr(),
+            )
+        };
+        if hwnd.is_null() {
+            return None;
+        }
+        if window_matches_pid(hwnd, expected_pid) {
+            return Some(hwnd);
+        }
+        prev = hwnd;
     }
+}
+
+pub fn find_flyout_window() -> Option<HWND> {
+    find_flyout_window_for_pid(std::process::id())
+}
+
+/// Separates monitor-lookup cursor (`cursor_pos.or(os_cursor)`) from layout anchor cursor (`cursor_pos`)
+/// so that when `cursor_pos` is `None` (e.g. `"Open BatStat"` menu or second-instance launch),
+/// `compute_flyout_position` uses its bottom-right tray corner fallback rather than centering on a random cursor X.
+pub fn resolve_cursor_anchors(
+    cursor_pos: Option<(i32, i32)>,
+    os_cursor: Option<(i32, i32)>,
+) -> (Option<(i32, i32)>, Option<(i32, i32)>) {
+    (cursor_pos.or(os_cursor), cursor_pos)
 }
 
 pub fn apply_flyout_window_style(hwnd: HWND) {
@@ -152,19 +190,20 @@ pub fn position_and_show_flyout(
             return;
         }
 
-        let fallback_cursor = cursor_pos.or_else(|| {
+        let os_cursor = {
             let mut pt: POINT = std::mem::zeroed();
             if GetCursorPos(&mut pt) != 0 {
                 Some((pt.x, pt.y))
             } else {
                 None
             }
-        });
+        };
+        let (monitor_cursor, layout_cursor) = resolve_cursor_anchors(cursor_pos, os_cursor);
 
         let anchor_pt = tray_rect
             .filter(|r| r.is_valid())
             .map(|r| r.center())
-            .or(fallback_cursor)
+            .or(monitor_cursor)
             .unwrap_or((0, 0));
 
         let hmon = MonitorFromPoint(
@@ -228,7 +267,7 @@ pub fn position_and_show_flyout(
         };
 
         let (x, y) =
-            compute_flyout_position(tray_rect, fallback_cursor, mon_rect, work_rect, phys_size);
+            compute_flyout_position(tray_rect, layout_cursor, mon_rect, work_rect, phys_size);
 
         SetWindowPos(
             hwnd,
@@ -300,5 +339,26 @@ mod tests {
         assert!(!should_open_on_tray_click(false, Some(t0), t0 + Duration::from_millis(80)));
         assert!(should_open_on_tray_click(false, Some(t0), t0 + Duration::from_millis(300)));
         assert!(should_open_on_tray_click(false, None, t0));
+    }
+
+    #[test]
+    fn test_window_matches_pid_rejects_foreign_process_window() {
+        let desktop_hwnd = unsafe { windows_sys::Win32::UI::WindowsAndMessaging::GetDesktopWindow() };
+        assert!(!desktop_hwnd.is_null());
+        assert!(!window_matches_pid(desktop_hwnd, std::process::id()));
+        assert_eq!(find_flyout_window_for_pid(u32::MAX), None);
+    }
+
+    #[test]
+    fn test_none_cursor_uses_os_cursor_for_monitor_only_and_anchors_to_tray_corner() {
+        let (mon_pt, layout_cursor) = resolve_cursor_anchors(None, Some((120, 900)));
+        assert_eq!(mon_pt, Some((120, 900)));
+        assert_eq!(layout_cursor, None);
+
+        let mon = ScreenRect { left: 0, top: 0, right: 1920, bottom: 1080 };
+        let work = ScreenRect { left: 0, top: 0, right: 1920, bottom: 1032 };
+        let (x, y) = compute_flyout_position(None, layout_cursor, mon, work, (380, 490));
+        assert_eq!(x, 1920 - 380 - 12);
+        assert_eq!(y, 1032 - 490 - 12);
     }
 }

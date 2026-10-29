@@ -418,6 +418,41 @@ fn request_tray_update(state: &Arc<Mutex<SharedState>>) {
     }
 }
 
+fn extract_tray_event_rect(event: &TrayIconEvent) -> Option<win_flyout::ScreenRect> {
+    match event {
+        TrayIconEvent::Click { rect, .. } | TrayIconEvent::DoubleClick { rect, .. } => {
+            Some(win_flyout::ScreenRect {
+                left: rect.position.x.round() as i32,
+                top: rect.position.y.round() as i32,
+                right: (rect.position.x + rect.size.width as f64).round() as i32,
+                bottom: (rect.position.y + rect.size.height as f64).round() as i32,
+            })
+        }
+        _ => None,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn should_auto_hide_on_focus_loss(
+    has_tray: bool,
+    is_pinned: bool,
+    suppress_focus_hide: bool,
+    reclaim_focus_after_dialog: bool,
+    dialog_grace_active: bool,
+    had_focus_since_open: bool,
+    open_grace_done: bool,
+    is_focused_now: bool,
+) -> bool {
+    has_tray
+        && !is_pinned
+        && !suppress_focus_hide
+        && !reclaim_focus_after_dialog
+        && !dialog_grace_active
+        && had_focus_since_open
+        && open_grace_done
+        && !is_focused_now
+}
+
 struct BatStatApp {
     state: Arc<Mutex<SharedState>>,
     ui_state: Option<crate::ui::SettingsWindow>,
@@ -425,6 +460,7 @@ struct BatStatApp {
     first_frame: bool,
     style_applied: bool,
     opened_at: Option<std::time::Instant>,
+    dialog_grace_until: Option<std::time::Instant>,
     had_focus_since_open: bool,
     saved_pin_state: bool,
     saved_custom_pos: bool,
@@ -444,6 +480,7 @@ impl BatStatApp {
             first_frame: true,
             style_applied: false,
             opened_at: None,
+            dialog_grace_until: None,
             had_focus_since_open: false,
             saved_pin_state: false,
             saved_custom_pos: false,
@@ -465,7 +502,7 @@ impl BatStatApp {
             )
         };
 
-        let mut win = crate::ui::SettingsWindow::new(config, active_ids, statuses);
+        let mut win = crate::ui::SettingsWindow::new_with_fonts_ready(config, active_ids, statuses);
         win.update_status = update_status;
         win.is_pinned = self.saved_pin_state;
         win.has_custom_position = self.saved_custom_pos;
@@ -510,6 +547,7 @@ impl BatStatApp {
         self.visible = false;
         self.ui_state = None;
         self.opened_at = None;
+        self.dialog_grace_until = None;
         self.had_focus_since_open = false;
 
         if let Some(hwnd) = win_flyout::find_flyout_window() {
@@ -608,18 +646,25 @@ impl eframe::App for BatStatApp {
             }
 
             if let Some(ref mut ui_state) = self.ui_state {
-                // Auto-dismiss on focus loss when unpinned and not inside a native file/folder picker
+                // Auto-dismiss on focus loss when unpinned and not inside/recovering from a modal file/folder picker
                 let open_grace_done = self
                     .opened_at
                     .map(|t| t.elapsed() > std::time::Duration::from_millis(80))
                     .unwrap_or(true);
-                if has_tray
-                    && !ui_state.is_pinned
-                    && !ui_state.suppress_focus_hide
-                    && self.had_focus_since_open
-                    && open_grace_done
-                    && !is_focused_now
-                {
+                let dialog_grace_active = self
+                    .dialog_grace_until
+                    .map(|until| std::time::Instant::now() < until)
+                    .unwrap_or(false);
+                if should_auto_hide_on_focus_loss(
+                    has_tray,
+                    ui_state.is_pinned,
+                    ui_state.suppress_focus_hide,
+                    ui_state.reclaim_focus_after_dialog,
+                    dialog_grace_active,
+                    self.had_focus_since_open,
+                    open_grace_done,
+                    is_focused_now,
+                ) {
                     self.close_flyout(ctx, true);
                     return;
                 }
@@ -727,6 +772,21 @@ impl eframe::App for BatStatApp {
 
                 let prev_custom_pos = ui_state.has_custom_position;
                 ui_state.update(ctx, frame);
+
+                if ui_state.reclaim_focus_after_dialog {
+                    ui_state.reclaim_focus_after_dialog = false;
+                    let now = std::time::Instant::now();
+                    self.dialog_grace_until =
+                        Some(now + std::time::Duration::from_millis(500));
+                    self.opened_at = Some(now);
+                    self.had_focus_since_open = false;
+                    if let Some(hwnd) = win_flyout::find_flyout_window() {
+                        unsafe {
+                            windows_sys::Win32::UI::WindowsAndMessaging::SetForegroundWindow(hwnd);
+                        }
+                    }
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                }
 
                 // Sync pin & custom drag position flags
                 self.saved_pin_state = ui_state.is_pinned;
@@ -1209,6 +1269,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         win_flyout::WINDOW_TITLE,
         native_options,
         Box::new(move |cc| {
+            crate::ui::theme::configure_flyout_fonts(&cc.egui_ctx);
+            crate::ui::theme::apply_flyout_visuals(&cc.egui_ctx);
+
             // Set up event handlers that queue events and wake the UI
             let pending_menu = Arc::new(Mutex::new(Vec::<MenuEvent>::new()));
 
@@ -1252,32 +1315,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let tray_ctx = cc.egui_ctx.clone();
             let state_for_tray = Arc::clone(&state_clone_ui);
             TrayIconEvent::set_event_handler(Some(move |event: TrayIconEvent| {
+                let extracted_rect = extract_tray_event_rect(&event);
+                if let Some(r) = extracted_rect {
+                    if let Ok(mut s) = state_for_tray.lock() {
+                        s.last_tray_rect = Some(r);
+                    }
+                }
+
                 if let TrayIconEvent::Click {
                     button: MouseButton::Left,
                     button_state: MouseButtonState::Up,
-                    rect,
                     position,
                     ..
                 } = event
                 {
-                    let tray_rect = win_flyout::ScreenRect {
-                        left: rect.position.x.round() as i32,
-                        top: rect.position.y.round() as i32,
-                        right: (rect.position.x + rect.size.width as f64).round() as i32,
-                        bottom: (rect.position.y + rect.size.height as f64).round() as i32,
-                    };
                     let click_pos = (position.x.round() as i32, position.y.round() as i32);
                     let now = std::time::Instant::now();
 
                     enum Action {
-                        Open { preserve_pos: bool, scale: f32 },
+                        Open {
+                            tray_rect: Option<win_flyout::ScreenRect>,
+                            preserve_pos: bool,
+                            scale: f32,
+                        },
                         Close,
                         Ignore,
                     }
 
                     let action = {
                         let mut s = state_for_tray.lock().unwrap();
-                        s.last_tray_rect = Some(tray_rect);
                         s.last_click_pos = Some(click_pos);
 
                         if win_flyout::should_open_on_tray_click(
@@ -1289,6 +1355,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             s.request_open_flyout = true;
                             s.request_close_flyout = false;
                             Action::Open {
+                                tray_rect: extracted_rect.or(s.last_tray_rect),
                                 preserve_pos: s.flyout_custom_pos,
                                 scale: s.dpi_scale,
                             }
@@ -1302,13 +1369,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     match action {
                         Action::Open {
+                            tray_rect,
                             preserve_pos,
                             scale,
                         } => {
                             if let Some(hwnd) = win_flyout::find_flyout_window() {
                                 win_flyout::position_and_show_flyout(
                                     hwnd,
-                                    Some(tray_rect),
+                                    tray_rect,
                                     Some(click_pos),
                                     scale,
                                     preserve_pos,
@@ -1421,6 +1489,45 @@ mod tests {
 
         let lines = build_ordered_tray_menu_lines(&cfg, &active_ids, &statuses);
         assert_eq!(lines, vec!["Xbox Elite: 64%", "Pulsar X2: 88%"]);
+    }
+
+    #[test]
+    fn test_modal_dialog_post_close_suppresses_focus_loss_autohide() {
+        // Without dialog grace, unfocused unpinned flyout auto-hides:
+        assert!(should_auto_hide_on_focus_loss(
+            true, false, false, false, false, true, true, false
+        ));
+        // Immediately after native rfd dialog closes (`reclaim_focus_after_dialog` or `dialog_grace_active`),
+        // focus loss must NOT auto-hide the flyout:
+        assert!(!should_auto_hide_on_focus_loss(
+            true, false, false, true, false, true, true, false
+        ));
+        assert!(!should_auto_hide_on_focus_loss(
+            true, false, false, false, true, true, true, false
+        ));
+    }
+
+    #[test]
+    fn test_right_click_tray_event_extracts_tray_screen_rect() {
+        let right_click = TrayIconEvent::Click {
+            id: tray_icon::TrayIconId::new("batstat"),
+            position: tray_icon::dpi::PhysicalPosition::new(1820.0, 1054.0),
+            rect: tray_icon::Rect {
+                position: tray_icon::dpi::PhysicalPosition::new(1808.0, 1032.0),
+                size: tray_icon::dpi::PhysicalSize::new(32, 48),
+            },
+            button: MouseButton::Right,
+            button_state: MouseButtonState::Up,
+        };
+        assert_eq!(
+            extract_tray_event_rect(&right_click),
+            Some(win_flyout::ScreenRect {
+                left: 1808,
+                top: 1032,
+                right: 1840,
+                bottom: 1080,
+            })
+        );
     }
 }
 
