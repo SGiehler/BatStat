@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::time::{Duration, Instant};
 use windows_sys::Win32::Foundation::{HWND, POINT, RECT};
 use windows_sys::Win32::Graphics::Dwm::{

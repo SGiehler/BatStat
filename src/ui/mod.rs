@@ -115,7 +115,6 @@ pub fn get_available_channels(config: &AppConfig) -> Vec<(String, String)> {
 
 pub struct SettingsWindow {
     pub config: AppConfig,
-    pub original_config: AppConfig,
     pub active_devices: Vec<String>,
     pub device_statuses: std::collections::HashMap<String, DeviceBatteryStatus>,
     pub update_status: crate::UpdateStatus,
@@ -140,7 +139,6 @@ pub struct SettingsWindow {
     // Host signals
     pub device_removed: bool,
     pub request_close: bool,
-    pub discard_changes: bool,
     pub request_poll: bool,
     pub request_test_notification: bool,
     pub request_update_check: bool,
@@ -169,10 +167,8 @@ impl SettingsWindow {
         device_statuses: std::collections::HashMap<String, DeviceBatteryStatus>,
     ) -> Self {
         config.polling_interval_secs = config.polling_interval_secs.clamp(1, 60);
-        let original_config = config.clone();
         Self {
             config,
-            original_config,
             active_devices,
             device_statuses,
             update_status: crate::UpdateStatus::Idle,
@@ -193,7 +189,6 @@ impl SettingsWindow {
 
             device_removed: false,
             request_close: false,
-            discard_changes: false,
             request_poll: false,
             request_test_notification: false,
             request_update_check: false,
@@ -212,10 +207,6 @@ impl SettingsWindow {
             toast: None,
             fonts_initialized: false,
         }
-    }
-
-    pub fn has_unsaved_changes(&self) -> bool {
-        self.save_immediately || self.save_on_release
     }
 
     pub fn mark_dirty_immediate(&mut self) {
@@ -262,7 +253,6 @@ impl SettingsWindow {
 
         match self.persist_config() {
             Ok(()) => {
-                self.original_config = self.config.clone();
                 self.config_saved_in_place = true;
             }
             Err(e) => {
