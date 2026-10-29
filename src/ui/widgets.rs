@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::ui::theme::{self, ActionIcon};
 use eframe::egui::{self, Color32, Pos2, Rect, Rounding, Sense, Stroke, Vec2};
 

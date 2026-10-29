@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use eframe::egui::{self, Color32, Pos2, Rect, Rounding, Stroke, Vec2};
 
 // Obsidian Flyout Surface Palette
@@ -18,7 +16,6 @@ pub const BG_TRACK: Color32 = Color32::from_rgb(38, 41, 54);           // #26293
 pub const BG_ACTIVE_PILL: Color32 = Color32::from_rgb(46, 50, 66);     // #2e3242
 
 pub const BG_LOW_CARD: Color32 = Color32::from_rgb(36, 21, 24);        // #241518
-pub const BG_LOW_CARD_HOVER: Color32 = Color32::from_rgb(44, 25, 29);  // #2c191d
 pub const BORDER_LOW_CARD: Color32 = Color32::from_rgb(92, 35, 42);    // #5c232a
 
 // Semantic Accents

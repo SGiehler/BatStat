@@ -140,9 +140,6 @@ pub fn get_icon_list_for(config: &AppConfig) -> Vec<String> {
     list
 }
 
-pub fn get_icon_list() -> Vec<String> {
-    get_icon_list_for(&AppConfig::default())
-}
 
 fn colorize_icon(default_bytes: &[u8], color: image::Rgba<u8>) -> Vec<u8> {
     let mut img = image::load_from_memory(default_bytes).unwrap().into_rgba8();
