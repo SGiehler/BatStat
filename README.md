@@ -1,33 +1,50 @@
 # BatStat ⚡
 
-BatStat is a lightweight, native Windows system tray battery monitor for wireless gaming peripherals, written in Rust. It runs unobtrusively in the background, alerts you when devices are running low, and provides a sleek settings UI to customize thresholds and startup behavior.
+**BatStat** is an ultra-lightweight, native Windows 11 system tray battery monitor for wireless gaming peripherals, written in Rust. It sits quietly in your taskbar (`< 15 MB` RAM, `0%` CPU while hidden), renders live battery percentages or low-battery alert icons directly in the system tray, and opens a sleek Windows 11 DWM rounded-corner flyout with a single click.
+
+## Screenshots
+
+| Devices Flyout | Preferences & Tray Setup |
+| :---: | :---: |
+| <img src="docs/screenshots/flyout-devices.png" alt="BatStat Devices Flyout" width="380" /> | <img src="docs/screenshots/flyout-preferences.png" alt="BatStat Preferences Flyout" width="380" /> |
+| *Live battery cards, `⋮⋮` drag-to-reorder priority, and compact offline rows* | *Tray `%` readout preview, `15s/30s/60s` poll selector, autostart, and configurable icons folder* |
+
+<p align="center">
+  <img src="docs/screenshots/tray-readout.png" alt="BatStat Windows 11 Taskbar Tray Readout" width="322" />
+  <br />
+  <em>Crisp dynamic pixel-art battery percentage (<code>91</code>) rendered directly in the Windows 11 system tray</em>
+</p>
 
 ## Features
 
-- 🔋 **Multi-Channel Support**: Dynamically queries and renders multi-channel battery levels (e.g., Left and Right earbud percentages, plus charging case support).
-- 🔄 **Smart Tray Cycling**: When multiple devices are low, the tray icon and its tooltip automatically cycle between them at a 3-second interval.
-- ⚙️ **Premium Settings UI**: A modern dark-mode GUI built with `egui` and `eframe` to configure alert thresholds, toggle notifications, and set custom icons.
-- 🚀 **Autostart Integration**: Option to automatically launch BatStat with Windows via registry setup.
-- 🔔 **Windows Alerts**: Real-time desktop notifications when a device reaches its alert threshold.
+- 🪟 **Native Windows 11 Tray Flyout**: Single left-click toggles a borderless DWM rounded-corner flyout anchored right above your system tray icon (multi-monitor & DPI aware). Click outside or press `Esc` to dismiss, or drag the header to move and auto-pin it open.
+- 🔢 **Live Taskbar `%` Readout & Smart Cycling**: Pin any device channel's live battery percentage as a crisp pixel-art tray icon (emerald green while charging), or let BatStat automatically cycle between low-battery alert icons at a 3-second interval.
+- 🔋 **Single & Multi-Channel Telemetry**: Queries both single-battery mice/controllers and multi-channel peripherals (independent Left / Right earbud & charging case levels).
+- ↕️ **Drag-and-Drop Priority & Custom Alert Icons**: Drag `⋮⋮` grips to reorder device priority across both the flyout and right-click tray menu. Click any device to expand its inline drawer with nickname editing, smooth alert threshold slider, 5 quick color tint swatches, `.png` / `.ico` drag-and-drop import, and a configurable **Icons folder**.
+- ⚡ **100% Auto-Save & Featherweight Footprint**: Every toggle, slider, rename, and priority change saves automatically with zero "Save" buttons, zero WebView overhead, and `0%` UI CPU while hidden.
+- 🔄 **Autostart, Native Alerts & Built-in Updater**: Launch automatically at Windows login, receive desktop low-battery toast notifications (with one-click `Test`), and check/install `.msi` updates directly from GitHub Releases.
 
 ## Supported Hardware
 
-BatStat uses a modular plugin architecture to scan and query devices. For a complete list of technical specifications, vendor/product IDs, and connection types, see the [Supported Devices List](DEVICELIST.md).
+BatStat uses a modular plugin architecture to scan and query wireless peripherals directly without heavy vendor bloatware. For full protocol details, vendor/product IDs, and interface filters, see the [Supported Devices List](DEVICELIST.md).
 
-1. **Pulsar Wireless Gaming Mice** (via custom HID queries).
-2. **Xbox Controllers** (via modern Windows Gaming Input [WGI] APIs for precise percentages).
-3. **SteelSeries Arctis GameBuds** (via dual-channel Left/Right HID queries).
+1. **Pulsar Wireless Gaming Mice** — Direct vendor HID queries (exact battery `%` and charging state).
+2. **Logitech LIGHTSPEED Gaming Mice** — Direct HID++ 2.0 (`0x1004` Unified Battery) queries with automatic sleep/offline state fallback.
+3. **Xbox Wireless Controllers** — Modern `Windows.Gaming.Input` (WGI) WinRT telemetry for Xbox One, Series X|S, and Elite controllers.
+4. **SteelSeries Arctis GameBuds** — Dual-channel HID queries for independent Left and Right earbud battery percentages and connection status.
 
-## Getting Started
+## Installation & Building
 
-### Prerequisites
+### Installer (Recommended)
 
-- [Rust Toolchain](https://rustup.rs/) (stable version).
-- Windows 10/11 (for WinRT WGI APIs and notification center support).
+Download the latest `.msi` installer from [**GitHub Releases**](https://github.com/SGiehler/BatStat/releases/latest).
 
 ### Building from Source
 
-Clone the repository and build the release binary:
+#### Prerequisites
+
+- [Rust Toolchain](https://rustup.rs/) (stable MSVC target)
+- Windows 10 / 11
 
 ```bash
 git clone https://github.com/SGiehler/BatStat.git
@@ -35,7 +52,14 @@ cd BatStat
 cargo build --release
 ```
 
-The compiled binary will be located at `target/release/batstat.exe`.
+The compiled executable will be located at `target/release/batstat.exe`.
+
+## Configuration
+
+Settings and custom tray icons are stored automatically in `%APPDATA%\BatStat`:
+
+- `config.toml` — Device priorities, nicknames, alert thresholds, poll interval, tray readout channel, and custom icons path.
+- `icons\` — Built-in, color-tinted, and imported `.png` / `.ico` alert icons (relocatable via **Preferences → Icons folder**).
 
 ## License
 
