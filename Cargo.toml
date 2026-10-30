@@ -2,7 +2,7 @@
 name = "batstat"
 version = "2.0.0"
 edition = "2021"
-description = "Ultra-lightweight native Windows 11 system tray battery monitor and flyout for wireless gaming peripherals"
+description = "Lightweight native Windows 11 system tray battery monitor and flyout for wireless gaming peripherals"
 authors = ["SGiehler"]
 license = "MIT"
 repository = "https://github.com/SGiehler/BatStat"

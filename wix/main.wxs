@@ -69,7 +69,7 @@
 
         <Package Id='*'
             Keywords='Installer'
-            Description='Ultra-lightweight native Windows 11 system tray battery monitor and flyout for wireless gaming peripherals'
+            Description='Lightweight native Windows 11 system tray battery monitor and flyout for wireless gaming peripherals'
             Manufacturer='SGiehler'
             InstallerVersion='450'
             Languages='1033'

@@ -1,6 +1,6 @@
 # BatStat ⚡
 
-**BatStat** is an ultra-lightweight, native Windows 11 system tray battery monitor for wireless gaming peripherals, written in Rust. It sits quietly in your taskbar (`< 15 MB` RAM, `0%` CPU while hidden), renders live battery percentages or low-battery alert icons directly in the system tray, and opens a sleek Windows 11 DWM rounded-corner flyout with a single click.
+**BatStat** is a lightweight, native Windows 11 system tray battery monitor for wireless gaming peripherals, written in Rust. It sits quietly in your taskbar, renders live battery percentages or low-battery alert icons directly in the system tray, and opens a sleek Windows 11 DWM rounded-corner flyout with a single click.
 
 ## Screenshots
 
@@ -21,7 +21,7 @@
 - 🔢 **Live Taskbar `%` Readout & Smart Cycling**: Pin any device channel's live battery percentage as a crisp pixel-art tray icon (emerald green while charging), or let BatStat automatically cycle between low-battery alert icons at a 3-second interval.
 - 🔋 **Single & Multi-Channel Telemetry**: Queries both single-battery mice/controllers and multi-channel peripherals (independent Left / Right earbud & charging case levels).
 - ↕️ **Drag-and-Drop Priority & Custom Alert Icons**: Drag `⋮⋮` grips to reorder device priority across both the flyout and right-click tray menu. Click any device to expand its inline drawer with nickname editing, smooth alert threshold slider, 5 quick color tint swatches, `.png` / `.ico` drag-and-drop import, and a configurable **Icons folder**.
-- ⚡ **100% Auto-Save & Featherweight Footprint**: Every toggle, slider, rename, and priority change saves automatically with zero "Save" buttons, zero WebView overhead, and `0%` UI CPU while hidden.
+- ⚡ **Instant Auto-Save & Native Rendering**: Every toggle, slider, rename, and priority change saves automatically with zero "Save" buttons, no WebView, and an idle UI loop while hidden.
 - 🔄 **Autostart, Native Alerts & Built-in Updater**: Launch automatically at Windows login, receive desktop low-battery toast notifications (with one-click `Test`), and check/install `.msi` updates directly from GitHub Releases.
 
 ## Supported Hardware
